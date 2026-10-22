@@ -70,19 +70,29 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
     // unbounded feedback loop or spur a new response state.
     const writes=await page.evaluate(async()=>{
       let repairs=0;
-      const observer=new MutationObserver(records=>{
-        for(const item of records)
-          if(item.target.textContent?.startsWith('✅ '))repairs++;
-      });
-      observer.observe(document.head.querySelector('title'),{subtree:true,childList:true,characterData:true});
-      for(let i=0;i<30;i++){
-        document.title='Synthetic Chat';
-        await Promise.resolve();
-        await Promise.resolve();
+      let source=document,descriptor=null;
+      while(source&&!descriptor){
+        descriptor=Object.getOwnPropertyDescriptor(source,'title');
+        source=Object.getPrototypeOf(source);
       }
-      await new Promise(resolve=>setTimeout(resolve,200));
-      observer.disconnect();
-      return repairs;
+      if(!descriptor?.get||!descriptor?.set)throw Error('Document title accessor unavailable');
+      Object.defineProperty(document,'title',{
+        configurable:true,
+        get(){return descriptor.get.call(document);},
+        set(next){
+          if(String(next).startsWith('✅ '))repairs++;
+          return descriptor.set.call(document,next);
+        }
+      });
+      try{
+        for(let i=0;i<30;i++){
+          document.title='Synthetic Chat';
+          await Promise.resolve();
+          await Promise.resolve();
+        }
+        await new Promise(resolve=>setTimeout(resolve,200));
+        return repairs;
+      }finally{delete document.title;}
     });
     assert.ok(writes<=12,'title recovery writes must have a strict per-minute cap');
     assert.equal(await page.evaluate(()=>document.documentElement.dataset.chatSignalsState),'finished');
