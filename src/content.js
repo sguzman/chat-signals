@@ -7,6 +7,7 @@
   const owner={dispose};globalThis.__chatSignalsOwner=owner;
   const tracker=state.create();
   const tokens=new WeakMap();
+  const originalFavicons=new Map();
   let tokenCount=0,current=null,currentHex=null,observer=null,observedMain=null,
     queued=false,job=0,clickSettleJob=0,routeNonce=0,iconLink=null,previousState=-1,lastProbe=0;
   const STOP='button[data-testid="stop-button"],button[aria-label="Stop generating"],button[aria-label="Stop response"]';
@@ -75,9 +76,36 @@
     }
     return canvas.toDataURL('image/png');
   }
+  function restoreFavicons(){
+    for(const [link,saved] of originalFavicons){
+      // Respect a site update made after our write rather than overwriting it.
+      if(!link.isConnected||link.getAttribute('href')!==saved.written)continue;
+      for(const name of ['href','type','sizes']){
+        if(saved[name]===null)link.removeAttribute(name);
+        else link.setAttribute(name,saved[name]);
+      }
+    }
+    originalFavicons.clear();
+    iconLink?.remove();iconLink=null;
+  }
   function paintIdentity(){
-    if(!current||!currentHex){iconLink?.remove();iconLink=null;return;}
+    if(!current||!currentHex){restoreFavicons();return;}
     const png=drawIcon(currentHex,current.kind);if(!png)return;
+    // A second favicon link alone may lose to the site's links in Firefox.
+    // Keep existing icon candidates consistent, without watching document.head.
+    for(const link of document.querySelectorAll('link[rel~="icon"]')){
+      if(link===iconLink)continue;
+      let saved=originalFavicons.get(link);
+      if(!saved){
+        saved={href:link.getAttribute('href'),type:link.getAttribute('type'),
+          sizes:link.getAttribute('sizes'),written:null};
+        originalFavicons.set(link,saved);
+      }
+      if(link.getAttribute('href')!==png)link.setAttribute('href',png);
+      if(link.getAttribute('type')!=='image/png')link.setAttribute('type','image/png');
+      if(link.hasAttribute('sizes'))link.removeAttribute('sizes');
+      saved.written=png;
+    }
     if(!iconLink?.isConnected){
       iconLink=document.createElement('link');iconLink.rel='icon';iconLink.type='image/png';
       iconLink.dataset.chatSignalsIcon='1';document.head.append(iconLink);
@@ -183,7 +211,7 @@
     window.removeEventListener('popstate',schedule);
     window.removeEventListener('pageshow',schedule);
     window.removeEventListener('pagehide',dispose);
-    iconLink?.remove();
+    restoreFavicons();
     if(globalThis.__chatSignalsOwner===owner)delete globalThis.__chatSignalsOwner;
   }
   document.addEventListener('click',onClick,true);

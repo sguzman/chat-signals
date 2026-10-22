@@ -4,7 +4,10 @@ import {readFile} from 'node:fs/promises';
 import {firefox,chromium} from 'playwright';
 const read=name=>readFile(new URL('../'+name,import.meta.url),'utf8');
 const scripts=await Promise.all(['src/color.js','src/state.js','src/content.js'].map(read));
-const html='<!doctype html><html><head><title>Synthetic Chat</title></head><body>'+
+const html='<!doctype html><html><head><title>Synthetic Chat</title>'+
+  '<link rel="icon" href="/synthetic-icon-a.ico" type="image/x-icon" sizes="16x16">'+
+  '<link rel="icon" href="/synthetic-icon-b.svg" type="image/svg+xml" sizes="any">'+
+  '</head><body>'+
   '<main><article data-testid="conversation-turn-old"><div data-message-author-role="assistant">'+
   '<button aria-label="Copy">Copy</button></div></article>'+
   '<form id="composer"><textarea id="prompt-textarea"></textarea></form></main></body></html>';
@@ -25,6 +28,14 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
     }));
     assert.ok(initial.icon?.startsWith('data:image/png;base64,'));
     assert.equal(initial.title,'Synthetic Chat');
+    const faviconCandidates=await page.evaluate(()=>[...document.querySelectorAll('link[rel~="icon"]:not([data-chat-signals-icon])')].map(link=>({
+      png:link.getAttribute('href')?.startsWith('data:image/png;base64,'),
+      type:link.getAttribute('type'),
+      sizes:link.getAttribute('sizes')
+    })));
+    assert.equal(faviconCandidates.length,2);
+    assert.ok(faviconCandidates.every(x=>x.png&&x.type==='image/png'&&x.sizes===null),
+      'existing SVG/ICO favicon links must not outrank the allocated color');
     await page.evaluate(()=>{
       const button=document.createElement('button');
       button.type='button';button.dataset.testid='stop-button';
@@ -77,7 +88,18 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
       return result;
     });
     assert.equal(rescans,0,'ordinary streamed text DOM must not rescan transcript tail');
-    console.log('PASS '+name+': generating -> verifying -> confirmed; stable PNG and title; bounded streaming');
+    const restored=await page.evaluate(()=>{
+      window.__chatSignalsOwner.dispose();
+      return [...document.querySelectorAll('link[rel~="icon"]')].map(link=>({
+        href:link.getAttribute('href'),type:link.getAttribute('type'),
+        sizes:link.getAttribute('sizes')
+      }));
+    });
+    assert.deepEqual(restored,[
+      {href:'/synthetic-icon-a.ico',type:'image/x-icon',sizes:'16x16'},
+      {href:'/synthetic-icon-b.svg',type:'image/svg+xml',sizes:'any'}
+    ],'disposing restores the original favicon declarations');
+    console.log('PASS '+name+': generating -> verifying -> confirmed; stable PNG; restored favicon candidates; bounded streaming');
   }finally{
     await context.close();await browser.close();
   }

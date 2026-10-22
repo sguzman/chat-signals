@@ -9,7 +9,9 @@ import {chromium} from 'playwright';
 
 const extensionPath=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const profile=await mkdtemp(path.join(os.tmpdir(),'chat-signals-e2e-'));
-const sample='<html><head><title>Synthetic Chat</title></head><body>'+
+const sample='<html><head><title>Synthetic Chat</title>'+
+  '<link rel="icon" href="/synthetic-icon.svg" type="image/svg+xml" sizes="any">'+
+  '</head><body>'+
   '<main><article data-testid="conversation-turn-old">'+
   '<div data-message-author-role="assistant"><button aria-label="Copy">Copy</button></div>'+
   '</article><form><textarea id="prompt-textarea"></textarea></form></main></body></html>';
@@ -81,6 +83,15 @@ try{
   assert.ok(await atEdge(project)<30,'project favicon should be circular');
   assert.ok(Object.values(slots).every(x=>/^[0-9a-f]{16}$/.test(x.key)));
   assert.ok(first.icon?.startsWith('data:image/png;base64,'));
+  const overwritten=await a.evaluate(()=>{
+    const existing=document.querySelector('link[rel~="icon"]:not([data-chat-signals-icon])');
+    return {url:existing?.getAttribute('href'),type:existing?.getAttribute('type'),
+      sizes:existing?.getAttribute('sizes')};
+  });
+  assert.equal(overwritten.type,'image/png');
+  assert.equal(overwritten.sizes,null);
+  assert.ok(overwritten.url?.startsWith('data:image/png;base64,'),
+    'installed extension must override competing favicon declaration');
   assert.ok(second.icon?.startsWith('data:image/png;base64,'));
   assert.equal(first.state,'idle');
   assert.equal(first.title,'Synthetic Chat');
