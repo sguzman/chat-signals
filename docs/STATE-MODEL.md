@@ -5,7 +5,7 @@ The primary product is an **evidence-aware observation** of a chat, independent 
 ## Distinct dimensions
 
 1. **Conversation identity:** normal, project or custom-GPT scoped chat. Unrecognized routes remain unidentified; never invent IDs from page text.
-2. **Response activity:** `idle`, `generating`, `verifying`, `finished`, `interrupted`, `failed`, `limit`, `unknown`. This is an **inferred state**, not a server guarantee.
+2. **Response activity:** `idle`, `submitted`, `generating`, `verifying`, `finished`, `interrupted`, `failed`, `limit`, `unknown`. This is an **inferred state**, not a server guarantee.
 3. **Read status:** `unread` or `viewed` for a *verified finished event*, independent of activity.
 4. **Evidence:** finite coded observations with timestamp, source family, current response epoch, and explanation of what remains unsupported.
 5. **Confidence:** `observed` (direct UI fact), `inferred` (transition from facts), `unknown` (insufficient evidence); never present a speculative state as certain.
@@ -14,6 +14,7 @@ The primary product is an **evidence-aware observation** of a chat, independent 
 
 | Evidence | Inference | What it cannot prove |
 | --- | --- | --- |
+| Explicit composer submission (Send, Retry, form submit or Enter) | Submitted; intent observed but unconfirmed | That ChatGPT accepted the request or started generating |
 | Stop response control visible in the current composer | Generating | That a network request succeeded or output will complete |
 | Stop disappears after generation | Verifying | That a reply completed |
 | Fresh assistant reply **and** its finished action controls, after current generation | Finished | Content correctness or remote persistence |
@@ -39,4 +40,4 @@ Do not read user/assistant transcript text to classify content. Only narrow, sho
 
 ## Initial implementation boundary
 
-The first implementation may only support DOM-visible generations and their final action controls. State coverage gaps are documented, not silently filled with request success. A richer network/transport cross-check and source-level ChatGPT study are **subsequent research tasks**, not claims of implemented behavior.
+The first implementation can observe user submission intent, DOM-visible generations and final action controls. Submitted intent becomes unknown after nine seconds without further evidence; it is not proof of a network operation. State coverage gaps are documented, not silently filled with request success. A richer network/transport cross-check and source-level ChatGPT study are **subsequent research tasks**, not claims of implemented behavior.

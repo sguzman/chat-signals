@@ -96,6 +96,11 @@ try{
   assert.equal(first.state,'idle');
   assert.equal(first.title,'Synthetic Chat');
 
+  // This test exercises the installed content script rather than injecting it.
+  await a.evaluate(()=>document.querySelector('#prompt-textarea').dispatchEvent(
+    new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true})));
+  await a.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='submitted');
+  assert.match(await a.title(),/^📤 /u);
   await a.evaluate(()=>{
     const stop=document.createElement('button');stop.dataset.testid='fruitjuice-stop-button';
     stop.textContent='Stop';document.querySelector('form').append(stop);

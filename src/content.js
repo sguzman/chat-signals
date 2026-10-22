@@ -9,13 +9,15 @@
   const tokens=new WeakMap();
   const originalFavicons=new Map();
   let tokenCount=0,current=null,currentHex=null,observer=null,observedMain=null,
-    queued=false,job=0,clickSettleJob=0,routeNonce=0,iconLink=null,previousState=-1,lastProbe=0,
+    queued=false,job=0,clickSettleJob=0,intentExpiryJob=0,lastIntentAt=-1000,routeNonce=0,iconLink=null,previousState=-1,lastProbe=0,
     titleObserver=null,watchedTitle=null,titleWriteCount=0,titleWriteWindow=0;
   const STOP='button[data-testid="stop-button"],button[data-testid="fruitjuice-stop-button"],button[aria-label="Stop generating"],button[aria-label="Stop response"]';
+  const SEND='button[data-testid="send-button"],button[data-testid="composer-submit-button"],button[aria-label="Send prompt" i],button[aria-label="Send message" i],button[aria-label="Send" i],button[data-testid="regenerate-response-button"],button[data-testid="retry-button"]';
+  const EDITOR='#prompt-textarea,[data-testid="prompt-textarea"],[contenteditable="true"][role="textbox"]';
   const ACTION='button[aria-label="Copy" i],button[aria-label="Copy response" i],button[title="Copy" i],button[data-testid="copy-turn-action-button"],button[data-testid="copy-button"],[data-testid="turn-action-controls"] button,.turn-action-controls button';
-  const EMOJI={idle:'',unknown:'❔',generating:'⏳',verifying:'🔎',
+  const EMOJI={idle:'',unknown:'❔',submitted:'📤',generating:'⏳',verifying:'🔎',
     interrupted:'🔌',failed:'⚠️',limit:'🛑',finished:'✅'};
-  const strip=s=>String(s||'').replace(/^(?:(?:⏳|🔔|✅|🔌|⚠️|❌|🛑|🔎|❔)\s+)+/u,'');
+  const strip=s=>String(s||'').replace(/^(?:(?:📤|⏳|🔔|✅|🔌|⚠️|❌|🛑|🔎|❔)\s+)+/u,'');
   const present=el=>Boolean(el?.isConnected&&el.getClientRects().length);
   const token=node=>{
     if(!node)return null;
@@ -172,7 +174,7 @@
     });}catch{/* identity fallback is still deterministic */}
   }
   const STRUCTURAL='[data-message-author-role="assistant"],'+
-    '[data-testid^="conversation-turn"],'+STOP+','+ACTION+','+
+    '[data-testid^="conversation-turn"],'+STOP+','+SEND+','+ACTION+','+
     '[role="alert"],[data-testid="conversation-error"],[data-testid="toast"]';
   function relevantChanges(records){
     // Streaming text children have no structural evidence. Inspect at most
@@ -224,8 +226,32 @@
     const now=performance.now(),delay=Math.max(0,250-(now-lastProbe));
     job=setTimeout(()=>{lastProbe=performance.now();reconcile();},delay);
   }
+  function noteSubmit(){
+    if(!current)return;
+    const now=performance.now();
+    if(now-lastIntentAt<350)return;
+    lastIntentAt=now;
+    tracker.intent(sample());publish();
+    if(intentExpiryJob)clearTimeout(intentExpiryJob);
+    intentExpiryJob=setTimeout(()=>{
+      intentExpiryJob=0;tracker.expireIntent();publish();
+    },9000);
+    schedule();
+  }
+  function onSubmit(event){
+    // Recognize composer submission without reading private draft text.
+    const form=event.target;
+    if(form?.matches?.('form')&&form.querySelector(EDITOR))noteSubmit();
+  }
+  function onKeydown(event){
+    if(event.key!=='Enter'||event.shiftKey||event.altKey||event.metaKey||
+       event.isComposing||event.repeat||event.defaultPrevented)return;
+    if(event.target?.closest?.(EDITOR))noteSubmit();
+  }
   function onClick(event){
     if(event.target?.closest?.(STOP)){tracker.cancel();publish();}
+    const button=event.target?.closest?.(SEND);
+    if(button&&!button.matches(':disabled,[aria-disabled="true"]'))noteSubmit();
     // Route changes occur in React without always firing popstate.
     schedule();
     if(clickSettleJob)clearTimeout(clickSettleJob);
@@ -235,10 +261,13 @@
   function dispose(){
     observer?.disconnect();observer=null;
     stopWatchingTitle();
-    if(current && /^(?:⏳|🔔|✅|🔌|⚠️|🛑|🔎|❔)\\s+/u.test(document.title))
+    if(current && /^(?:📤|⏳|🔔|✅|🔌|⚠️|🛑|🔎|❔)\\s+/u.test(document.title))
       document.title=strip(document.title);
     if(job)clearTimeout(job);
     if(clickSettleJob)clearTimeout(clickSettleJob);
+    if(intentExpiryJob)clearTimeout(intentExpiryJob);
+    document.removeEventListener('submit',onSubmit,true);
+    document.removeEventListener('keydown',onKeydown,true);
     document.removeEventListener('click',onClick,true);
     document.removeEventListener('visibilitychange',onVisible);
     window.removeEventListener('popstate',schedule);
@@ -247,6 +276,8 @@
     restoreFavicons();
     if(globalThis.__chatSignalsOwner===owner)delete globalThis.__chatSignalsOwner;
   }
+  document.addEventListener('submit',onSubmit,true);
+  document.addEventListener('keydown',onKeydown,true);
   document.addEventListener('click',onClick,true);
   document.addEventListener('visibilitychange',onVisible);
   window.addEventListener('popstate',schedule);

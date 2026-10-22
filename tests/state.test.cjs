@@ -90,3 +90,31 @@ test('a final action newly appears on an assistant turn started without one',()=
  f.observe(event({stop:false,assistantToken:12,actionToken:22}));
  assert.equal(f.snapshot().phase,'finished');
 });
+
+test('submission intent is visible before Stop, without claiming generation',()=>{
+ const f=create(); f.observe(event());
+ f.intent(event());
+ assert.equal(f.snapshot().phase,'submitted');
+ assert.equal(f.snapshot().epoch,1);
+ assert.equal(f.snapshot().reason,'user-submit-intent');
+ f.observe(event()); assert.equal(f.snapshot().phase,'submitted');
+ f.observe(event({stop:true}));assert.equal(f.snapshot().phase,'generating');
+ assert.equal(f.snapshot().epoch,1);
+});
+test('fast finished response is recognized even when Stop was never seen',()=>{
+ const f=create();f.observe(event());f.intent(event());
+ f.observe(event({actionToken:22,assistantToken:12}));
+ assert.equal(f.snapshot().phase,'finished');
+});
+test('old action controls cannot finish an unconfirmed submitted response',()=>{
+ const f=create();f.observe(event());f.intent(event());
+ f.observe(event());assert.equal(f.snapshot().phase,'submitted');
+ f.expireIntent();assert.equal(f.snapshot().phase,'unknown');
+ assert.equal(f.snapshot().reason,'submission-unconfirmed');
+});
+test('unknown routes reject submission and cancellation is not failure',()=>{
+ const f=create();f.intent(event());assert.equal(f.snapshot().phase,'unknown');
+ f.observe(event());f.intent(event());f.cancel();
+ assert.equal(f.snapshot().phase,'idle');
+ assert.equal(f.snapshot().reason,'manual-cancel');
+});

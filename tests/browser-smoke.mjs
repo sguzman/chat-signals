@@ -36,6 +36,21 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
     assert.equal(faviconCandidates.length,2);
     assert.ok(faviconCandidates.every(x=>x.png&&x.type==='image/png'&&x.sizes===null),
       'existing SVG/ICO favicon links must not outrank the allocated color');
+    // Neither an unrelated Enter nor Shift+Enter counts as submission.
+    const blocked=await page.evaluate(()=>{
+      const el=document.querySelector('#prompt-textarea');
+      const other=document.createElement('input');document.body.append(other);
+      other.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
+      el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',shiftKey:true,bubbles:true,cancelable:true}));
+      return document.documentElement.dataset.chatSignalsState;
+    });
+    assert.equal(blocked,'idle','unrelated and newline Enter must not trigger state');
+    await page.evaluate(()=>{
+      document.querySelector('#prompt-textarea').dispatchEvent(
+        new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
+    });
+    await page.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='submitted');
+    assert.match(await page.title(),/^📤 /u);
     await page.evaluate(()=>{
       const button=document.createElement('button');
       button.type='button';button.dataset.testid='fruitjuice-stop-button';
@@ -44,6 +59,7 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
     });
     await page.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='generating');
     assert.match(await page.title(),/^⏳ /u);
+    assert.equal(await page.evaluate(()=>document.documentElement.dataset.chatSignalsReason),'stop-visible');
     // React/site title rewrites must not permanently erase a live emoji.
     await page.evaluate(()=>{document.title='Synthetic Chat';});
     await page.waitForFunction(()=>document.title.startsWith('⏳ '));

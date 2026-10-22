@@ -1,7 +1,7 @@
 /* Evidence-bound response state tracker. No DOM, network or presentation dependencies. */
 (function(root){
   'use strict';
-  const phases=new Set(['idle','generating','verifying','finished','interrupted','failed','limit','unknown']);
+  const phases=new Set(['idle','submitted','generating','verifying','finished','interrupted','failed','limit','unknown']);
   function create(){
     let key=null,phase='unknown',read='viewed',epoch=0,baselineAction=null,baselineAssistant=null,
       baselineNotice=null,lastSample=null,reason='no-observation',changed=0,cancelPendingStop=false;
@@ -12,6 +12,21 @@
       key=next;phase=next?'idle':'unknown';read='viewed';epoch=0;
       baselineAction=null;baselineAssistant=null;baselineNotice=null;lastSample=null;cancelPendingStop=false;
       reason=next?'route-observed':'unrecognized-route';changed++;
+      return out();
+    }
+    function intent(sample){
+      if(!sample||!key||sample.key!==key)return out();
+      epoch++;phase='submitted';read='viewed';cancelPendingStop=false;
+      baselineAction=sample.actionToken||null;
+      baselineAssistant=sample.assistantToken||null;
+      baselineNotice=sample.noticeToken||null;
+      reason='user-submit-intent';changed++;
+      return out();
+    }
+    function expireIntent(){
+      if(phase==='submitted'){
+        phase='unknown';reason='submission-unconfirmed';changed++;
+      }
       return out();
     }
     function begin(sample){
@@ -30,7 +45,9 @@
       if(!stop)cancelPendingStop=false;
       if(stop&&cancelPendingStop){lastSample={assistantToken:sample.assistantToken||null};return out();}
       if(stop){
-        if(phase!=='generating'&&phase!=='verifying'&&phase!=='interrupted')begin(sample);
+        if(phase==='submitted'){
+          phase='generating';reason='stop-visible';
+        }else if(phase!=='generating'&&phase!=='verifying'&&phase!=='interrupted')begin(sample);
         else if(phase!=='generating'){phase='generating';reason='stop-visible';}
       }else if(phase==='generating'){
         phase='verifying';reason='stop-disappeared-unconfirmed';
@@ -40,7 +57,7 @@
         sample.assistantToken!==baselineAssistant;
       const freshActionOnStartedTurn=baselineAction===null&&freshAction;
       // A replaced old Copy button alone is not a completed new response.
-      if(!stop && (phase==='generating'||phase==='verifying'||phase==='interrupted') &&
+      if(!stop && (phase==='submitted'||phase==='generating'||phase==='verifying'||phase==='interrupted') &&
          freshAction && (replyFresh||freshActionOnStartedTurn)){
         phase='finished';read=sample.hidden?'unread':'viewed';
         reason='fresh-assistant-terminal-action';
@@ -65,7 +82,7 @@
       return out();
     }
     function cancel(){
-      if(['generating','verifying','interrupted'].includes(phase)){
+      if(['submitted','generating','verifying','interrupted'].includes(phase)){
         phase='idle';read='viewed';reason='manual-cancel';cancelPendingStop=true;changed++;
       }
       return out();
@@ -76,7 +93,7 @@
       }
       return out();
     }
-    return Object.freeze({observe,reset,cancel,viewed,snapshot:out});
+    return Object.freeze({observe,reset,cancel,viewed,intent,expireIntent,snapshot:out});
   }
   const api=Object.freeze({create,phases});
   root.ChatSignalsState=api;

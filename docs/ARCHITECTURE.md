@@ -2,7 +2,7 @@
 
 ## Four independent concerns
 
-**Observation** reads a narrow, bounded set of ChatGPT composer controls, latest assistant reply structure and short status notices; outputs coded evidence. No favicon/title writes here.
+**Observation** reads a narrow, bounded set of ChatGPT composer controls, explicit user submission events, latest assistant reply structure and short status notices; outputs coded evidence. No favicon/title writes here.
 
 **Interpretation** is a deterministic response-epoch state machine, keeping unknown, interrupted, verifying, failed and finished distinguishable. Old and incidental events must not overwrite newer outcomes.
 
@@ -28,3 +28,7 @@ DOM observation is restricted to a bounded `main` subtree, ignores character dat
 - On any defect, add the failed scenario **and a counterexample for the opposite extreme**, before changing inference thresholds.
 
 Browser simulation is evidence of code mechanics only; a live ChatGPT interface may change selectors and streams. No test suite can prove the absence of a native-browser crash.
+
+## Submission evidence (initial)
+
+The script listens for an explicit Send/Retry button, a composer form submission, or unmodified Enter in the composer. Submission is represented as `submitted` with 📤, not as proven generation. The actual Stop control advances it to `generating`. A fresh completed assistant action may confirm a fast response without an observed Stop. If nine seconds pass with no confirming evidence, submitted becomes unknown; no repeated probing or network hooks are introduced. Ordinary Shift+Enter or Enter outside the composer never starts a response epoch. This detector does not access or save prompt content.
