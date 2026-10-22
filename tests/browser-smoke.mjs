@@ -59,7 +59,25 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
       return document.documentElement.dataset.chatSignalsState;
     });
     assert.equal(snapshot,'finished');
-    console.log('PASS '+name+': generating -> verifying -> confirmed; stable PNG and title');
+    // Wait for the two intentional startup hydration checks before measuring.
+    await page.waitForTimeout(2800);
+    const rescans=await page.evaluate(async()=>{
+      const native=document.createTreeWalker.bind(document);
+      let calls=0;
+      document.createTreeWalker=(...args)=>{calls++;return native(...args);};
+      const old=document.querySelector('[data-testid="conversation-turn-old"]');
+      for(let i=0;i<48;i++){
+        const span=document.createElement('span');
+        span.textContent='Synthetic streamed token';
+        old.append(span);
+      }
+      await new Promise(resolve=>setTimeout(resolve,550));
+      const result=calls;
+      document.createTreeWalker=native;
+      return result;
+    });
+    assert.equal(rescans,0,'ordinary streamed text DOM must not rescan transcript tail');
+    console.log('PASS '+name+': generating -> verifying -> confirmed; stable PNG and title; bounded streaming');
   }finally{
     await context.close();await browser.close();
   }
