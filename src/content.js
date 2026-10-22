@@ -117,16 +117,23 @@
     '[data-testid^="conversation-turn"],'+STOP+','+ACTION+','+
     '[role="alert"],[data-testid="conversation-error"],[data-testid="toast"]';
   function relevantChanges(records){
-    // Streaming token fragments add many ordinary DOM children. Those are
-    // not response-lifecycle evidence and must not trigger a tail rescan.
+    // Streaming text children have no structural evidence. Inspect at most
+    // 64 inserted/removed roots and 80 descendants per nontrivial root.
     let examined=0;
     for(const record of records){
-      for(const node of [...record.addedNodes,...record.removedNodes]){
-        if(++examined>64)return true; // uncertain batch: coalesce one check
-        if(node.nodeType!==1)continue;
-        if(node.matches?.(STRUCTURAL))return true;
-        if(node.childElementCount>80)return true; // do not scan huge inserts
-        if(node.querySelector?.(STRUCTURAL))return true;
+      for(const nodes of [record.addedNodes,record.removedNodes]){
+        for(const node of nodes){
+          if(++examined>64)return true; // uncertain batch: one coalesced check
+          if(node.nodeType!==1)continue;
+          if(node.matches?.(STRUCTURAL))return true;
+          if(!node.firstElementChild)continue;
+          const walker=document.createTreeWalker(node,NodeFilter.SHOW_ELEMENT);
+          let count=0,child;
+          while((child=walker.nextNode())){
+            if(++count>80)return true; // do not traverse huge inserted subtrees
+            if(child.matches?.(STRUCTURAL))return true;
+          }
+        }
       }
     }
     return false;
