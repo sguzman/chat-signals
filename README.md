@@ -30,7 +30,7 @@ Disable the historical ChatGPT Tab Signal extension before trying Chat Signals i
 
 The extension does not yet implement the historical notification chime or native completion notification. That parity work is downstream of reliable completion observation, not silently omitted from the roadmap.
 
-Run `npm run check` for dependency-free unit/safety tests. The CI synthetic browser suite injects scripts into intercepted Firefox and Chromium fixtures; it does **not** prove that an unpacked extension is installed or fully interoperable with live ChatGPT.
+Run `npm run check` for dependency-free unit/safety tests. CI tests the observer on synthetic Firefox and Chromium pages, and separately loads the **actual unpacked extension** with its Manifest V3 background worker in a disposable Chromium profile. Firefox add-on manifest lint also runs. These checks do **not** demonstrate installed-extension behavior in Firefox or authenticated live ChatGPT compatibility; those remain the purpose of spare-profile dogfooding.
 
 ## Status and limits
 
