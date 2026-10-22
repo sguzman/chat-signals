@@ -8,8 +8,14 @@
     const valid=s=>/^[a-zA-Z0-9_-]{6,128}$/.test(s||'');
     if(p.length===2&&p[0]==='c'&&valid(p[1]))
       return {kind:'chat',key:'chat:'+p[1]};
-    if(p.length===4&&p[0]==='g'&&p[2]==='c'&&valid(p[1])&&valid(p[3]))
-      return {kind:'gpt',key:'gpt:'+p[1]+'/chat:'+p[3]};
+    // Project conversations use /g/g-p-<project>/c/<chat> on ChatGPT.
+    // Check this BEFORE generic custom-GPT routes; the namespaces differ.
+    if(p.length===4&&p[0]==='g'&&p[2]==='c'&&valid(p[1])&&valid(p[3])){
+      if(p[1].startsWith('g-p-'))
+        return {kind:'project',key:'project:'+p[1]+'/chat:'+p[3]};
+      if(p[1].startsWith('g-'))
+        return {kind:'gpt',key:'gpt:'+p[1]+'/chat:'+p[3]};
+    }
     if(p.length===4&&p[0]==='project'&&p[2]==='c'&&valid(p[1])&&valid(p[3]))
       return {kind:'project',key:'project:'+p[1]+'/chat:'+p[3]};
     return null;

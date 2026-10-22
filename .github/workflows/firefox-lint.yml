@@ -1,0 +1,18 @@
+name: Firefox extension manifest validation
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  firefox-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate Firefox add-on packaging and manifest
+        run: npx --yes web-ext@8.10.0 lint --source-dir .

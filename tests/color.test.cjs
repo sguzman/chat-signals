@@ -5,12 +5,15 @@ const sample=n=>`https://chatgpt.com/c/synthetic-chat-${String(n).padStart(6,'0'
 
 test('identity is scoped, query-independent and rejects arbitrary pages',()=>{
  const normal=colors.identity(sample(1));
- const project=colors.identity('https://chatgpt.com/project/example123/c/synthetic123');
- const gpt=colors.identity('https://chatgpt.com/g/example123/c/synthetic123');
+ const project=colors.identity('https://chatgpt.com/g/g-p-example123/c/synthetic123');
+ const alternateProject=colors.identity('https://chatgpt.com/project/example123/c/synthetic123');
+ const gpt=colors.identity('https://chatgpt.com/g/g-example123/c/synthetic123');
  assert.equal(normal.kind,'chat');
  assert.equal(project.kind,'project');
+ assert.equal(alternateProject.kind,'project');
  assert.equal(gpt.kind,'gpt');
  assert.notEqual(colors.hash(project.key),colors.hash(gpt.key));
+ assert.equal(colors.identity('https://chatgpt.com/g/synthetic123/c/synthetic123'),null);
  assert.deepEqual(colors.identity(sample(1)+'?private=1'),normal);
  assert.equal(colors.identity('https://example.com/c/synthetic123'),null);
  assert.equal(colors.identity('https://chatgpt.com/'),null);

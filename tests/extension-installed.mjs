@@ -14,12 +14,12 @@ const sample='<html><head><title>Synthetic Chat</title></head><body>'+
   '<div data-message-author-role="assistant"><button aria-label="Copy">Copy</button></div>'+
   '</article><form><textarea id="prompt-textarea"></textarea></form></main></body></html>';
 let context;
-const visit=async suffix=>{
+const visit=async (suffix,route=null)=>{
   const page=await context.newPage();
   await page.route('https://chatgpt.com/**',route=>route.fulfill({
     contentType:'text/html',status:200,body:sample
   }));
-  await page.goto('https://chatgpt.com/c/synthetic-chat-'+suffix);
+  await page.goto('https://chatgpt.com'+(route||'/c/synthetic-chat-'+suffix));
   await page.waitForFunction(()=>document.documentElement.dataset.chatSignalsColor?.startsWith('#'),null,{timeout:12000});
   return page;
 };
@@ -36,6 +36,8 @@ try{
   assert.match(worker.url(),/chrome-extension:\/\/[^/]+\/src\/background\.js$/);
   const a=await visit('normal-001');
   const b=await visit('normal-002');
+  const project=await visit('project-001','/g/g-p-example123/c/synthetic-chat-project-001');
+  const gpt=await visit('gpt-001','/g/g-example123/c/synthetic-chat-gpt-001');
   const first=await a.evaluate(()=>({
     color:document.documentElement.dataset.chatSignalsColor,
     icon:document.querySelector('link[data-chat-signals-icon]')?.href,
@@ -48,6 +50,25 @@ try{
   }));
   assert.match(first.color,/^#[0-9a-f]{6}$/);
   assert.notEqual(first.color,second.color,'worker must distinguish two active chats');
+  const colors=await Promise.all([a,b,project,gpt].map(p=>
+    p.evaluate(()=>document.documentElement.dataset.chatSignalsColor)));
+  assert.equal(new Set(colors).size,4,'active chats must get distinct swatches');
+  // Distinguish the intended project circle from normal and custom-GPT
+  // rounded squares by inspecting alpha at a known edge pixel.
+  const atEdge=page=>page.evaluate(async()=>{
+    const src=document.querySelector('link[data-chat-signals-icon]')?.href;
+    const img=new Image();img.src=src;await img.decode();
+    const canvas=document.createElement('canvas');canvas.width=32;canvas.height=32;
+    const ctx=canvas.getContext('2d');ctx.drawImage(img,0,0);
+    return ctx.getImageData(6,4,1,1).data[3];
+  });
+  assert.ok(await atEdge(a)>200,'normal chat favicon should be a square');
+  assert.ok(await atEdge(gpt)>200,'GPT favicon should be a rounded square');
+  assert.ok(await atEdge(project)<30,'project favicon should be circular');
+  const slots=await worker.evaluate(async()=>
+    (await chrome.storage.session.get('chatSignalsSessionAllocationsV1')).chatSignalsSessionAllocationsV1);
+  assert.equal(Object.keys(slots||{}).length,4,'real background worker must register each tab');
+  assert.ok(Object.values(slots).every(x=>/^[0-9a-f]{16}$/.test(x.key)));
   assert.ok(first.icon?.startsWith('data:image/png;base64,'));
   assert.ok(second.icon?.startsWith('data:image/png;base64,'));
   assert.equal(first.state,'idle');

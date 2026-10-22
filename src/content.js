@@ -113,13 +113,30 @@
       }
     });}catch{/* identity fallback is still deterministic */}
   }
+  const STRUCTURAL='[data-message-author-role="assistant"],'+
+    '[data-testid^="conversation-turn"],'+STOP+','+ACTION+','+
+    '[role="alert"],[data-testid="conversation-error"],[data-testid="toast"]';
+  function relevantChanges(records){
+    // Streaming token fragments add many ordinary DOM children. Those are
+    // not response-lifecycle evidence and must not trigger a tail rescan.
+    let examined=0;
+    for(const record of records){
+      for(const node of [...record.addedNodes,...record.removedNodes]){
+        if(++examined>64)return true; // uncertain batch: coalesce one check
+        if(node.nodeType!==1)continue;
+        if(node.matches?.(STRUCTURAL))return true;
+        if(node.childElementCount>80)return true; // do not scan huge inserts
+        if(node.querySelector?.(STRUCTURAL))return true;
+      }
+    }
+    return false;
+  }
   function bindMain(main){
     if(main===observedMain)return;
     observer?.disconnect();observer=null;observedMain=main;
     if(!main)return;
     observer=new MutationObserver(records=>{
-      // Ignore characterData, attributes and head updates. Coalesce UI mutations.
-      if(records.length)schedule();
+      if(relevantChanges(records))schedule();
     });
     observer.observe(main,{subtree:true,childList:true});
   }
