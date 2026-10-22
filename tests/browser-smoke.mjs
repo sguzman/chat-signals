@@ -27,7 +27,7 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
       title:document.title
     }));
     assert.ok(initial.icon?.startsWith('data:image/png;base64,'));
-    assert.equal(initial.title,'Synthetic Chat');
+    assert.equal(initial.title,'⚪ Synthetic Chat');
     const faviconCandidates=await page.evaluate(()=>[...document.querySelectorAll('link[rel~="icon"]:not([data-chat-signals-icon])')].map(link=>({
       png:link.getAttribute('href')?.startsWith('data:image/png;base64,'),
       type:link.getAttribute('type'),
@@ -170,13 +170,24 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
       assert.match(await quick.title(),/^📤 /u);
       await quick.evaluate(()=>{
         const reply=document.createElement('article');
-        reply.innerHTML='<div data-message-author-role="assistant"><button aria-label="Copy">Copy</button></div>';
+        reply.dataset.testid='conversation-turn-new';
+        reply.dataset.turn='assistant';
+        reply.innerHTML='<div class="answer-shell"></div>';
         document.querySelector('main').append(reply);
+      });
+      await quick.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='generating');
+      assert.match(await quick.title(),/^⏳ /u);
+      // No Stop button: a terminal Copy action still certifies completion.
+      await quick.evaluate(()=>{
+        const action=document.createElement('button');
+        action.dataset.testid='copy-turn-action-button';
+        action.textContent='Copy';
+        document.querySelector('[data-testid="conversation-turn-new"]').append(action);
       });
       await quick.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='finished');
       assert.match(await quick.title(),/^✅ /u);
     }finally{await quick.close();}
-    console.log('PASS '+name+': submit -> generating -> verifying -> finished and fast submit -> finished');
+    console.log('PASS '+name+': submit -> generating -> verifying -> finished and assistant turn -> generating -> finished (no Stop)');
   }finally{
     await context.close();await browser.close();
   }

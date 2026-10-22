@@ -94,7 +94,7 @@ try{
     'installed extension must override competing favicon declaration');
   assert.ok(second.icon?.startsWith('data:image/png;base64,'));
   assert.equal(first.state,'idle');
-  assert.equal(first.title,'Synthetic Chat');
+  assert.equal(first.title,'⚪ Synthetic Chat');
 
   // This test exercises the installed content script rather than injecting it.
   await a.evaluate(()=>document.querySelector('#prompt-textarea').dispatchEvent(

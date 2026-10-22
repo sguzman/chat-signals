@@ -15,6 +15,7 @@ The primary product is an **evidence-aware observation** of a chat, independent 
 | Evidence | Inference | What it cannot prove |
 | --- | --- | --- |
 | Explicit composer submission (Send, Retry, form submit or Enter) | Submitted; intent observed but unconfirmed | That ChatGPT accepted the request or started generating |
+| New assistant turn becomes visible after Send/Retry | Generating, even if no Stop was observed | That the assistant has finished or the answer is correct |
 | Stop response control visible in the current composer | Generating | That a network request succeeded or output will complete |
 | Stop disappears after generation | Verifying | That a reply completed |
 | Fresh assistant reply **and** its finished action controls, after current generation | Finished | Content correctness or remote persistence |
@@ -41,3 +42,5 @@ Do not read user/assistant transcript text to classify content. Only narrow, sho
 ## Initial implementation boundary
 
 The first implementation can observe user submission intent, DOM-visible generations and final action controls. Submitted intent becomes unknown after nine seconds without further evidence; it is not proof of a network operation. State coverage gaps are documented, not silently filled with request success. A richer network/transport cross-check and source-level ChatGPT study are **subsequent research tasks**, not claims of implemented behavior.
+
+The visible initial state of a recognized idle conversation is ⚪. Explicit assistant-turn markers may establish generation even without Stop evidence. Fresh completed reply actions are still required for ✅, and changes to an old assistant's toolbar alone are not completion evidence. New replies can resolve a previously unknown submission rather than leaving it permanently unconfirmed.

@@ -52,10 +52,19 @@
       }else if(phase==='generating'){
         phase='verifying';reason='stop-disappeared-unconfirmed';
       }
-      const freshAction=Boolean(sample.actionToken)&&sample.actionToken!==baselineAction;
-      const replyFresh=Boolean(sample.assistantToken)&&
+      const freshReply=Boolean(sample.assistantToken)&&
         sample.assistantToken!==baselineAssistant;
-      const freshActionOnStartedTurn=baselineAction===null&&freshAction;
+      // A new assistant turn is evidence that output started. This does not
+      // claim completion or establish that the transport succeeded.
+      if(freshReply&&!stop&&(phase==='submitted'||
+         (phase==='unknown'&&reason==='submission-unconfirmed'))){
+        phase='generating';reason='new-assistant-turn-visible';
+      }
+      const freshAction=Boolean(sample.actionToken)&&sample.actionToken!==baselineAction;
+      const replyFresh=freshReply;
+      const freshActionOnStartedTurn=baselineAction===null&&freshAction&&
+        (baselineAssistant===null||reason==='stop-visible'||
+         reason==='stop-disappeared-unconfirmed');
       // A replaced old Copy button alone is not a completed new response.
       if(!stop && (phase==='submitted'||phase==='generating'||phase==='verifying'||phase==='interrupted') &&
          freshAction && (replyFresh||freshActionOnStartedTurn)){

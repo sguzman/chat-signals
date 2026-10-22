@@ -32,3 +32,7 @@ Browser simulation is evidence of code mechanics only; a live ChatGPT interface 
 ## Submission evidence (initial)
 
 The script listens for an explicit Send/Retry button, a composer form submission, or unmodified Enter in the composer. Submission is represented as `submitted` with 📤, not as proven generation. The actual Stop control advances it to `generating`. A fresh completed assistant action may confirm a fast response without an observed Stop. If nine seconds pass with no confirming evidence, submitted becomes unknown; no repeated probing or network hooks are introduced. Ordinary Shift+Enter or Enter outside the composer never starts a response epoch. This detector does not access or save prompt content.
+
+## Observation of a new assistant response without Stop
+
+Submission alone is intent, not proof of response generation. The appearance of a newly identified assistant turn after the submission baseline is direct structural evidence that generation began. Do not infer finished from the reply shell: only the new reply's completed action controls can finish the attempt. A DOM re-render of the previous assistant's existing turn or controls is a negative counterexample. These facts remain in-memory only; no message bodies or raw chat identifiers are recorded.

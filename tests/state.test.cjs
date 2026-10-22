@@ -118,3 +118,27 @@ test('unknown routes reject submission and cancellation is not failure',()=>{
  assert.equal(f.snapshot().phase,'idle');
  assert.equal(f.snapshot().reason,'manual-cancel');
 });
+
+test('a new assistant turn establishes generation without a visible Stop control',()=>{
+ const f=create();f.observe(event());f.intent(event());
+ f.observe(event({assistantToken:12,actionToken:null}));
+ assert.equal(f.snapshot().phase,'generating');
+ assert.equal(f.snapshot().reason,'new-assistant-turn-visible');
+ f.observe(event({assistantToken:12,actionToken:null}));
+ assert.equal(f.snapshot().phase,'generating');
+ f.observe(event({assistantToken:12,actionToken:22}));
+ assert.equal(f.snapshot().phase,'finished');
+});
+test('old assistant footer re-render is not a new response',()=>{
+ const f=create();f.observe(event());f.intent(event());
+ f.observe(event({assistantToken:11,actionToken:22}));
+ assert.equal(f.snapshot().phase,'submitted');
+});
+test('a delayed reply can recover from unconfirmed submission',()=>{
+ const f=create();f.observe(event());f.intent(event());f.expireIntent();
+ assert.equal(f.snapshot().phase,'unknown');
+ f.observe(event({assistantToken:12,actionToken:null}));
+ assert.equal(f.snapshot().phase,'generating');
+ f.observe(event({assistantToken:12,actionToken:22}));
+ assert.equal(f.snapshot().phase,'finished');
+});
