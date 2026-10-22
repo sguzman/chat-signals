@@ -43,6 +43,30 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
     assert.equal(faviconCandidates.length,2);
     assert.ok(faviconCandidates.every(x=>x.png&&x.type==='image/png'&&x.sizes===null),
       'existing SVG/ICO favicon links must not outrank the allocated color');
+    // After initial hydration, ChatGPT can replace an old favicon URL or
+    // append a new candidate. A normal title update should repair that drift
+    // without new head observers, polling, or response-state changes.
+    await page.evaluate(()=>{
+      const old=document.querySelector('link[rel~="icon"]:not([data-chat-signals-icon])');
+      old.setAttribute('href','/site-icon-overwrite.ico');
+      old.setAttribute('type','image/x-icon');
+      const added=document.createElement('link');added.rel='icon';
+      added.href='/site-late-favicon.svg';added.type='image/svg+xml';
+      added.dataset.syntheticLateIcon='1';
+      document.head.append(added);
+      document.title='Synthetic Chat Renamed';
+    });
+    await page.waitForFunction(()=>{
+      const candidates=[...document.querySelectorAll('link[rel~="icon"]')];
+      const expected=document.querySelector('link[data-chat-signals-icon]')?.getAttribute('href');
+      return expected?.startsWith('data:image/png;base64,')&&
+        candidates.length===4&&candidates.every(link=>
+          link.getAttribute('href')===expected&&
+          link.getAttribute('type')==='image/png'&&!link.hasAttribute('sizes'));
+    });
+    assert.equal(await page.evaluate(()=>document.documentElement.dataset.chatSignalsState),
+      'idle','favicon correction must not alter response state');
+    assert.equal(await page.title(),'⚪ Synthetic Chat Renamed');
     // Neither an unrelated Enter nor Shift+Enter counts as submission.
     const blocked=await page.evaluate(()=>{
       const el=document.querySelector('#prompt-textarea');
@@ -165,7 +189,10 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
     });
     assert.deepEqual(restored,[
       {href:'/synthetic-icon-a.ico',type:'image/x-icon',sizes:'16x16'},
-      {href:'/synthetic-icon-b.svg',type:'image/svg+xml',sizes:'any'}
+      {href:'/synthetic-icon-b.svg',type:'image/svg+xml',sizes:'any'},
+      // This late site-owned icon did not exist at initial paint. Respect the
+      // source it had before the extension's subsequent correction.
+      {href:'/site-late-favicon.svg',type:'image/svg+xml',sizes:null}
     ],'disposing restores the original favicon declarations');
     // A genuine Send button is a second independent submission path.
     // Simulate a quick response with no observed Stop control at all.

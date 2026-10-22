@@ -92,6 +92,25 @@ try{
   assert.equal(overwritten.sizes,null);
   assert.ok(overwritten.url?.startsWith('data:image/png;base64,'),
     'installed extension must override competing favicon declaration');
+  // The installed add-on must recover when ChatGPT updates favicon links
+  // after hydration; its existing title observer can trigger a bounded check.
+  await a.evaluate(()=>{
+    const original=document.querySelector('link[rel~="icon"]:not([data-chat-signals-icon])');
+    original.href='/synthetic-favicon-replacement.ico';
+    original.type='image/x-icon';
+    const late=document.createElement('link');
+    late.rel='icon';late.href='/synthetic-new-candidate.svg';
+    document.head.append(late);
+    document.title='Synthetic Chat Retitled';
+  });
+  await a.waitForFunction(()=>{
+    const candidates=[...document.querySelectorAll('link[rel~="icon"]')];
+    const source=document.querySelector('link[data-chat-signals-icon]')?.getAttribute('href');
+    return candidates.length===3&&source?.startsWith('data:image/png;base64,')&&
+      candidates.every(link=>link.getAttribute('href')===source);
+  });
+  assert.equal(await a.evaluate(()=>document.documentElement.dataset.chatSignalsState),
+    'idle','favicon repair must not change the chat status');
   assert.ok(second.icon?.startsWith('data:image/png;base64,'));
   assert.equal(first.state,'idle');
   assert.equal(first.title,'⚪ Synthetic Chat');

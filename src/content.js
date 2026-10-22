@@ -11,6 +11,7 @@
   const documentToken=crypto.randomUUID().replace(/-/g,'');
   const tokens=new WeakMap();
   const originalFavicons=new Map();
+  let iconImage=null,faviconRepairWindow=0,faviconRepairCount=0;
   let tokenCount=0,current=null,currentHex=null,observer=null,observedMain=null,
     queued=false,job=0,clickSettleJob=0,intentExpiryJob=0,lastIntentAt=-1000,routeNonce=0,iconLink=null,previousState=-1,lastProbe=0,
     titleObserver=null,watchedTitle=null,titleWriteCount=0,titleWriteWindow=0;
@@ -99,11 +100,12 @@
       }
     }
     originalFavicons.clear();
-    iconLink?.remove();iconLink=null;
+    iconLink?.remove();iconLink=null;iconImage=null;
   }
   function paintIdentity(){
     if(!current||!currentHex){restoreFavicons();return;}
     const png=drawIcon(currentHex,current.kind);if(!png)return;
+    iconImage=png;
     // A second favicon link alone may lose to the site's links in Firefox.
     // Keep existing icon candidates consistent, without watching document.head.
     for(const link of document.querySelectorAll('link[rel~="icon"]')){
@@ -125,6 +127,29 @@
     }
     if(iconLink.href!==png)iconLink.href=png;
   }
+  // Detect drift only when the existing response/title lifecycle is already
+  // running. No observer on document.head or favicon links, no new timer.
+  // The alert icon is generated independently, so a colored notification does
+  // not guarantee that ChatGPT's current favicon links still match it.
+  function maintainFavicon(){
+    if(!current||!currentHex||!iconImage)return;
+    const links=document.querySelectorAll('link[rel~="icon"]');
+    let drift=!iconLink?.isConnected||!links.length;
+    for(const link of links){
+      if(link.getAttribute('href')!==iconImage||
+         link.getAttribute('type')!=='image/png'||link.hasAttribute('sizes')){
+        drift=true;break;
+      }
+    }
+    if(!drift)return;
+    const now=performance.now();
+    if(now-faviconRepairWindow>=60000){
+      faviconRepairWindow=now;faviconRepairCount=0;
+    }
+    if(faviconRepairCount>=12)return; // bounded response to competing writers
+    faviconRepairCount++;
+    paintIdentity();
+  }
   // Only observe the existing <title> node, never document.head.
   // A content-title write produces one callback which immediately exits once
   // the desired prefix is present. The write budget bounds page/extension
@@ -133,6 +158,7 @@
     titleObserver?.disconnect();titleObserver=null;watchedTitle=null;
   }
   function maintainTitle(){
+    maintainFavicon();
     const r=tracker.snapshot();
     const prefix=!current?'':r.phase==='finished'&&r.read==='unread'?'🔔':EMOJI[r.phase]||'';
     if(!prefix){stopWatchingTitle();return;}
