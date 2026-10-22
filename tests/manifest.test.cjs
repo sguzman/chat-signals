@@ -4,7 +4,8 @@ const fs=require('node:fs');
 const manifest=require('../manifest.json');
 test('narrow cross-browser MV3 with Firefox event page and Chromium worker',()=>{
  assert.equal(manifest.manifest_version,3);
- assert.deepEqual(manifest.permissions,['storage']);
+ assert.deepEqual(manifest.permissions,['storage','notifications']);
+ assert.deepEqual(manifest.content_scripts[0].js,['src/color.js','src/state.js','src/chime.js','src/content.js']);
  assert.deepEqual(manifest.background.scripts,['src/color.js','src/background.js']);
  assert.equal(manifest.background.service_worker,'src/background.js');
  assert.deepEqual(manifest.content_scripts[0].matches,['https://chatgpt.com/*']);
@@ -14,6 +15,7 @@ test('narrow cross-browser MV3 with Firefox event page and Chromium worker',()=>
 test('no self-observing head, tab sweep, network, transcript access or hot injection',()=>{
  const content=fs.readFileSync('src/content.js','utf8');
  const worker=fs.readFileSync('src/background.js','utf8');
+ const sound=fs.readFileSync('src/chime.js','utf8');
  assert.match(content,/observer\.observe\(main,/);
  assert.match(content,/titleObserver\.observe\(node,\{childList:true,characterData:true,subtree:true\}\)/);
  assert.match(content,/titleWriteCount>=12/);
@@ -21,4 +23,7 @@ test('no self-observing head, tab sweep, network, transcript access or hot injec
  assert.doesNotMatch(content,/textContent.*(?:assistant|lastAssistant)/);
  assert.doesNotMatch(content,/fetch\(|XMLHttpRequest|localStorage|setInterval\(/);
  assert.doesNotMatch(worker,/tabs\.query\(|executeScript\(|fetch\(|setInterval\(/);
+ assert.doesNotMatch(sound,/fetch\(|localStorage|setInterval\(/);
+ assert.match(worker,/message:'Response finished\.'/);
+ assert.doesNotMatch(worker,/document\.title|request\.title|request\.message/);
 });

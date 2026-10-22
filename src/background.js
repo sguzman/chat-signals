@@ -23,21 +23,58 @@
     const next=chain.then(work,work);chain=next.catch(()=>{});
     return next;
   }
-  async function register(tabId,key){
+  async function register(tabId,key,documentToken){
     const slots=await get();
     const previous=Object.values(slots).find(x=>x.key===key);
     const occupied=[...new Set(Object.values(slots).filter(x=>x.key!==key).map(x=>x.hex))];
     const hex=previous?.hex||colors.choose(key,occupied);
-    slots[String(tabId)]={key,hex};
+    const prior=slots[String(tabId)];
+    const delivered=prior?.key===key&&prior.documentToken===documentToken?
+      prior.delivered||0:0;
+    slots[String(tabId)]={key,hex,documentToken,delivered};
     await put(slots);
     return {hex};
   }
+  function notify(tabId,key,documentToken,epoch){
+    return serialize(async()=>{
+      const slots=await get(),slot=slots[String(tabId)];
+      if(!slot||slot.key!==key||slot.documentToken!==documentToken||
+         slot.delivered>=epoch)return {created:false,reason:'not-current'};
+      // Commit the one-shot notification before invoking OS delivery; a
+      // background page suspension must not replay a completed response.
+      slot.delivered=epoch;
+      await put(slots);
+      if(!chrome.notifications?.create)return {created:false,reason:'unavailable'};
+      const options={type:'basic',title:'Chat Signals',
+        message:'Response finished.',
+        iconUrl:chrome.runtime.getURL('icons/completion.png')};
+      return new Promise(resolve=>{
+        try{
+          chrome.notifications.create('chat-signals-tab-'+tabId,options,()=>{
+            resolve({created:!chrome.runtime.lastError});
+          });
+        }catch{resolve({created:false,reason:'rejected'});}
+      });
+    });
+  }
   chrome.runtime.onMessage.addListener((request,sender,reply)=>{
     const tabId=sender?.tab?.id;
-    if(request?.type!=='chat-signals-register'||!Number.isInteger(tabId)||
-       !/^[0-9a-f]{16}$/.test(request.key||''))return false;
-    serialize(()=>register(tabId,request.key)).then(reply,()=>reply({hex:null}));
-    return true;
+    if(!Number.isInteger(tabId)||
+       !/^https:\/\/chatgpt\.com\//.test(sender.url||sender.tab.url||'')||
+       !/^[0-9a-f]{16}$/.test(request?.key||'')||
+       !/^[0-9a-f]{32}$/.test(request?.documentToken||''))return false;
+    if(request.type==='chat-signals-register'){
+      serialize(()=>register(tabId,request.key,request.documentToken))
+        .then(reply,()=>reply({hex:null}));
+      return true;
+    }
+    if(request.type==='chat-signals-complete'&&
+       Number.isSafeInteger(request.epoch)&&request.epoch>=1){
+      notify(tabId,request.key,request.documentToken,request.epoch)
+        .then(reply,()=>reply({created:false,reason:'error'}));
+      return true;
+    }
+    return false;
   });
   chrome.tabs.onRemoved.addListener(tabId=>{
     serialize(async()=>{

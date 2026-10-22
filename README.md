@@ -9,7 +9,8 @@ A Firefox-first, cross-browser WebExtension for observing the **state of a ChatG
 - **State:** distinguish idle (⚪), submitted (📤), generating (⏳), verifying (🔎), finished (✅), interrupted, length-limited, failed, and unknown (❔). A newly visible assistant turn can establish generation even when Stop is missed; completion still needs fresh reply actions. Preserve observed evidence and uncertainty; never infer response completion from HTTP success or an absent Stop control alone.
 - **Identity:** derive a stable, scope-aware conversation key; use color-distance selection in OKLab among allocated open chats. Use a filled square for a normal chat and a circle for project chats. Colors represent identity, **not** response state.
 - **Display:** a small state emoji prefix on the tab title. A narrowly bounded observer of the existing title element can restore an active emoji after ChatGPT overwrites the title; it never changes the observed response state.
-- **Later:** detailed state evidence and transitions, robust recovery, response alerts and audio, diagnostics export with strict privacy controls, and Viewsource-informed instrumentation.
+- **Alerts:** confirmed response completion triggers a generic desktop notification and a short two-note local chime, irrespective of tab focus. The chime depends on browser Web Audio permission and might be blocked, especially in background tabs. No private chat text/title appears in notification content.
+- **Later:** detailed state evidence and transitions, robust recovery, diagnostics export with strict privacy controls, and Viewsource-informed instrumentation.
 
 ## Documents
 
@@ -28,7 +29,11 @@ A Firefox-first, cross-browser WebExtension for observing the **state of a ChatG
 
 Disable the historical ChatGPT Tab Signal extension before trying Chat Signals in the same browser profile. Running both would create competing title and favicon writers. Already-open ChatGPT tabs are not automatically updated or reloaded after installing/reloading Chat Signals; open a new chat page for an unambiguous test.
 
-The extension does not yet implement the historical notification chime or native completion notification. That parity work is downstream of reliable completion observation, not silently omitted from the roadmap.
+Confirmed completions now request a **desktop notification** using Firefox/Chromium's `notifications` permission and a **short two-tone sound** using Web Audio. Both are attempted for foreground and background completions, only once per response. The notification says only "Response finished." with a generic icon; it contains no conversation text or title. Firefox's OS notification service and browser audio/autoplay policy determine whether you actually see or hear the cues. A scheduled sound is **not** proof of audible playback.
+
+The chime is unlocked by the user's normal Send action where permitted. If the browser suspends or blocks Web Audio in a background tab, it may be silent; the notification is a separate channel. The current diagnostics expose non-sensitive `data-chat-signals-sound` (`scheduled` or `blocked`) and `data-chat-signals-notification` (`requested` or `unavailable`), but these do not prove OS delivery. There is no background keep-alive, auto-popup, or chat data logging.
+
+**After updating the development extension**, Firefox may require accepting the new `notifications` permission, and a page reload may be needed for the new content script.
 
 Run `npm run check` for dependency-free unit/safety tests. CI tests the observer on synthetic Firefox and Chromium pages, and separately loads the **actual unpacked extension** with its Manifest V3 background worker in a disposable Chromium profile. Firefox add-on manifest lint also runs. These checks do **not** demonstrate installed-extension behavior in Firefox or authenticated live ChatGPT compatibility; those remain the purpose of spare-profile dogfooding.
 

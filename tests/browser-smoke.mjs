@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {firefox,chromium} from 'playwright';
 const read=name=>readFile(new URL('../'+name,import.meta.url),'utf8');
-const scripts=await Promise.all(['src/color.js','src/state.js','src/content.js'].map(read));
+const scripts=await Promise.all(['src/color.js','src/state.js','src/chime.js','src/content.js'].map(read));
 const html='<!doctype html><html><head><title>Synthetic Chat</title>'+
   '<link rel="icon" href="/synthetic-icon-a.ico" type="image/x-icon" sizes="16x16">'+
   '<link rel="icon" href="/synthetic-icon-b.svg" type="image/svg+xml" sizes="any">'+
@@ -21,6 +21,13 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
     }));
     await page.goto('https://chatgpt.com/c/synthetic-chat-001');
     for(const script of scripts)await page.addScriptTag({content:script});
+    await page.evaluate(()=>{
+      window.__completionChimes=0;
+      window.ChatSignalsChime={
+        unlock:async()=> 'ready',
+        play:async()=>{window.__completionChimes++;return 'scheduled';}
+      };
+    });
     await page.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='idle');
     const initial=await page.evaluate(()=>({
       icon:document.querySelector('link[data-chat-signals-icon]')?.href,
@@ -80,6 +87,15 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
       confidence:document.documentElement.dataset.chatSignalsConfidence
     }));
     assert.match(end.title,/^✅ /u);
+    await page.waitForFunction(()=>window.__completionChimes===1);
+    await page.evaluate(()=>{
+      const prev=document.querySelector('[data-testid="conversation-turn-old"]');
+      const button=document.createElement('button');button.setAttribute('aria-label','Copy');
+      prev.append(button);
+    });
+    await page.waitForTimeout(400);
+    assert.equal(await page.evaluate(()=>window.__completionChimes),1,
+      'a stale reply control must not trigger another chime');
     await page.evaluate(()=>{document.title='Synthetic Chat';});
     await page.waitForFunction(()=>document.title.startsWith('✅ '));
     // Bounded: even pathological repeated title rewrites cannot create an
@@ -160,6 +176,13 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
       }));
       await quick.goto('https://chatgpt.com/c/synthetic-chat-quick');
       for(const script of scripts)await quick.addScriptTag({content:script});
+      await quick.evaluate(()=>{
+        window.__completionChimes=0;
+        window.ChatSignalsChime={
+          unlock:async()=> 'ready',
+          play:async()=>{window.__completionChimes++;return 'scheduled';}
+        };
+      });
       await quick.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='idle');
       await quick.evaluate(()=>{
         const send=document.createElement('button');send.dataset.testid='send-button';
@@ -201,6 +224,9 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
       });
       await quick.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='finished');
       assert.match(await quick.title(),/^✅ /u);
+      await quick.waitForFunction(()=>window.__completionChimes===1);
+      await quick.waitForTimeout(400);
+      assert.equal(await quick.evaluate(()=>window.__completionChimes),1);
     }finally{await quick.close();}
     console.log('PASS '+name+': submit -> generating -> verifying -> finished and assistant turn -> generating -> finished (no Stop)');
   }finally{

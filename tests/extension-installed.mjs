@@ -126,6 +126,18 @@ try{
   assert.equal(after.color,first.color,'status must not change allocated color');
   assert.equal(after.icon,first.icon,'status must not rewrite icon');
   assert.match(after.title,/^✅ /u);
+  // The installed extension must reach its real background worker, without
+  // relying on a mocked page callback or on visible OS notifications.
+  let observedDelivery=false;
+  for(let i=0;i<50;i++){
+    const values=await worker.evaluate(async()=>
+      (await chrome.storage.session.get('chatSignalsSessionAllocationsV1')).chatSignalsSessionAllocationsV1||{});
+    observedDelivery=Object.values(values).some(x=>
+      x.key===Object.values(slots)[0].key&&x.delivered===1);
+    if(observedDelivery)break;
+    await a.waitForTimeout(100);
+  }
+  assert.equal(observedDelivery,true,'completion reached the worker once');
   assert.equal(await b.evaluate(()=>document.documentElement.dataset.chatSignalsState),'idle',
     'only requesting tab should be affected');
 

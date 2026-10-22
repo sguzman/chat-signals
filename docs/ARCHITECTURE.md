@@ -36,3 +36,11 @@ The script listens for an explicit Send/Retry button, a composer form submission
 ## Observation of a new assistant response without Stop
 
 Submission alone is intent, not proof of response generation. The appearance of a newly identified assistant turn after the submission baseline is direct structural evidence that generation began. Do not infer finished from the reply shell: only the new reply's completed action controls can finish the attempt. A DOM re-render of the previous assistant's existing turn or controls is a negative counterexample. These facts remain in-memory only; no message bodies or raw chat identifiers are recorded.
+
+## Completion alerts and audio
+
+A completed **response epoch** is the sole trigger for an alert. In the observing tab, the transition to `finished` with a fresh response action schedules one local two-note Web Audio chime. The same transition sends a minimal message containing only the already-hashed conversation key, a random per-document nonce, and the monotonic response epoch to the background component. No transcript, title, prompt, raw URL, DOM fragment or chat-specific notification text crosses that boundary. Audio attempts occur in both foreground and background tabs, after trying to unlock the context in a preceding explicit Send gesture. Browser autoplay restrictions may block or delay audio; delayed playback is deliberately suppressed.
+
+The background verifies the message originated from `chatgpt.com` and is for the currently registered tab/document. It records the delivered epoch in `storage.session` before invoking `notifications.create`, so event-page suspension and duplicate transitions cannot produce repeated notifications. OS notification delivery is not guaranteed by the browser API callback. One generic notification ID is reused per tab to avoid accumulating notifications for every response. No tab focus changes or background injections are performed.
+
+Regression tests include foreground completion, old-toolbar re-render, duplicate epochs, new documents/identities, origin validation, audio blocked, and a true installed-extension background-worker path. The original favicon colors and response evidence classifier do not depend on audio/notification success.

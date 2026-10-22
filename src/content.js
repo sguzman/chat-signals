@@ -6,6 +6,9 @@
   if(!color||!state)return;
   const owner={dispose};globalThis.__chatSignalsOwner=owner;
   const tracker=state.create();
+  // Random per-document nonce: no page URL, prompt, title or user data is sent.
+  const documentToken=crypto.randomUUID().replace(/-/g,'');
+  let lastNotifiedEpoch=0;
   const tokens=new WeakMap();
   const originalFavicons=new Map();
   let tokenCount=0,current=null,currentHex=null,observer=null,observedMain=null,
@@ -171,7 +174,8 @@
     if(!identity)return;
     currentHex=color.choose(color.hash(identity.key));paintIdentity();publish();
     if(!globalThis.chrome?.runtime?.sendMessage)return;
-    try{chrome.runtime.sendMessage({type:'chat-signals-register',key:color.hash(identity.key)},answer=>{
+    try{chrome.runtime.sendMessage({type:'chat-signals-register',
+      key:color.hash(identity.key),documentToken},answer=>{
       if(nonce!==routeNonce||current?.key!==identity.key)return;
       if(!/^#[0-9a-f]{6}$/.test(answer?.hex||''))return;
       if(currentHex!==answer.hex){
@@ -214,18 +218,43 @@
     });
     observer.observe(main,{subtree:true,childList:true});
   }
+  function notifyCompletion(previous,next){
+    if(!current||next.phase!=='finished'||previous.phase==='finished'||
+       next.epoch<1||next.epoch<=lastNotifiedEpoch)return;
+    lastNotifiedEpoch=next.epoch;
+    // Sound and desktop notification are independent outputs of the same
+    // confirmed transition. They run for foreground and background tabs.
+    const chime=globalThis.ChatSignalsChime;
+    if(chime?.play)void chime.play().then(outcome=>{
+      document.documentElement.dataset.chatSignalsSound=outcome;
+    },()=>{document.documentElement.dataset.chatSignalsSound='blocked';});
+    if(globalThis.chrome?.runtime?.sendMessage){
+      try{
+        chrome.runtime.sendMessage({type:'chat-signals-complete',
+          key:color.hash(current.key),documentToken,epoch:next.epoch},answer=>{
+          document.documentElement.dataset.chatSignalsNotification=
+            answer?.created?'requested':'unavailable';
+        });
+      }catch{
+        document.documentElement.dataset.chatSignalsNotification='unavailable';
+      }
+    }
+  }
   function reconcile(){
     queued=false;job=0;
     const next=color.identity(location.href);
     if(next?.key!==current?.key){
-      current=next;currentHex=null;
+      current=next;currentHex=null;lastNotifiedEpoch=0;
       previousState=-1;tracker.reset(next?.key||null);
       if(!next){++routeNonce;paintIdentity();}
       else allocate();
     }
     bindMain(document.querySelector('main'));
     if(!current){publish();return;}
-    tracker.observe(sample());publish();
+    const previous=tracker.snapshot();
+    tracker.observe(sample());
+    notifyCompletion(previous,tracker.snapshot());
+    publish();
   }
   function schedule(){
     if(queued)return;
@@ -238,6 +267,10 @@
     const now=performance.now();
     if(now-lastIntentAt<350)return;
     lastIntentAt=now;
+    // Run in the user's Send gesture; Firefox requires prior activation
+    // before background Web Audio may be permitted.
+    if(globalThis.ChatSignalsChime?.unlock)
+      void globalThis.ChatSignalsChime.unlock();
     tracker.intent(sample());publish();
     if(intentExpiryJob)clearTimeout(intentExpiryJob);
     intentExpiryJob=setTimeout(()=>{

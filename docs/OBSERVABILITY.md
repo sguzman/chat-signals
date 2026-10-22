@@ -56,7 +56,7 @@ Use those publications to generate **hypotheses and test plans**, not selectors 
 2. **M1 — visibility correctness:** validate selectors across normal/project/GPT chats, reloads, long chats and SPA navigation without real-profile automation. Fix only demonstrated mismatches.
 3. **M2 — response operations:** classify fresh Send/Retry, canceled responses, tool activity, interruptions and terminal evidence; add richer structured in-memory evidence.
 4. **M3 — transport corroboration:** consider minimal request-lifecycle permissions only if they demonstrably disambiguate DOM cases. Never conflate completed transport with completed answer.
-5. **M4 — alerts:** add completion chime/notification only after trusted completion signals, with independent delivery-state confirmation and foreground/background parity.
+5. **M4 — alerts (initial implementation):** generic desktop notification and two-note Web Audio triggered once by verified completion in foreground or background. Audio may be blocked by autoplay; API scheduling never proves OS audibility or notification visibility. Live-profile validation remains pending.
 6. **M5 — extensive diagnostics:** privacy-filtered local state inspector, explanations of inference, uncertainty and contradiction, deliberate export only if explicitly approved.
 
 Progress is evidence-dependent, not a schedule or excuse to invent functionality. Each milestone lists what is actually verified and what remains unknown.
