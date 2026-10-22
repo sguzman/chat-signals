@@ -4,19 +4,19 @@
   const phases=new Set(['idle','submitted','generating','verifying','finished','interrupted','failed','limit','unknown']);
   function create(){
     let key=null,phase='unknown',read='viewed',epoch=0,baselineAction=null,baselineAssistant=null,
-      baselineNotice=null,lastSample=null,reason='no-observation',changed=0,cancelPendingStop=false;
+      baselineNotice=null,lastSample=null,reason='no-observation',changed=0,cancelPendingStop=false,stopSeen=false;
     const out=()=>Object.freeze({phase,read,epoch,reason,changed,
       confidence:phase==='unknown'||phase==='verifying'?'unknown':
         phase==='finished'?'inferred':'observed'});
     function reset(next){
       key=next;phase=next?'idle':'unknown';read='viewed';epoch=0;
-      baselineAction=null;baselineAssistant=null;baselineNotice=null;lastSample=null;cancelPendingStop=false;
+      baselineAction=null;baselineAssistant=null;baselineNotice=null;lastSample=null;cancelPendingStop=false;stopSeen=false;
       reason=next?'route-observed':'unrecognized-route';changed++;
       return out();
     }
     function intent(sample){
       if(!sample||!key||sample.key!==key)return out();
-      epoch++;phase='submitted';read='viewed';cancelPendingStop=false;
+      epoch++;phase='submitted';read='viewed';cancelPendingStop=false;stopSeen=false;
       baselineAction=sample.actionToken||null;
       baselineAssistant=sample.assistantToken||null;
       baselineNotice=sample.noticeToken||null;
@@ -30,7 +30,7 @@
       return out();
     }
     function begin(sample){
-      cancelPendingStop=false;epoch++;phase='generating';read='viewed';
+      cancelPendingStop=false;stopSeen=true;epoch++;phase='generating';read='viewed';
       baselineAction=sample.actionToken||null;
       baselineAssistant=sample.assistantToken||null;
       baselineNotice=sample.noticeToken||null;
@@ -45,11 +45,13 @@
       if(!stop)cancelPendingStop=false;
       if(stop&&cancelPendingStop){lastSample={assistantToken:sample.assistantToken||null};return out();}
       if(stop){
+        stopSeen=true;
         if(phase==='submitted'){
           phase='generating';reason='stop-visible';
         }else if(phase!=='generating'&&phase!=='verifying'&&phase!=='interrupted')begin(sample);
         else if(phase!=='generating'){phase='generating';reason='stop-visible';}
-      }else if(phase==='generating'){
+      }else if(phase==='generating'&&stopSeen){
+        stopSeen=false;
         phase='verifying';reason='stop-disappeared-unconfirmed';
       }
       const freshReply=Boolean(sample.assistantToken)&&
