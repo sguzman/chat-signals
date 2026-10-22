@@ -8,7 +8,7 @@
   const tracker=state.create();
   const tokens=new WeakMap();
   let tokenCount=0,current=null,currentHex=null,observer=null,observedMain=null,
-    queued=false,job=0,routeNonce=0,iconLink=null,previousState=-1,lastProbe=0;
+    queued=false,job=0,clickSettleJob=0,routeNonce=0,iconLink=null,previousState=-1,lastProbe=0;
   const STOP='button[data-testid="stop-button"],button[aria-label="Stop generating"],button[aria-label="Stop response"]';
   const ACTION='button[aria-label="Copy"],button[data-testid="copy-turn-action-button"],button[data-testid="copy-button"],[data-testid="turn-action-controls"] button';
   const EMOJI={idle:'',unknown:'❔',generating:'⏳',verifying:'🔎',
@@ -94,7 +94,7 @@
     root.dataset.chatSignalsConfidence=r.confidence;
     if(currentHex)root.dataset.chatSignalsColor=currentHex;
     else delete root.dataset.chatSignalsColor;
-    const prefix=r.phase==='finished'&&r.read==='unread'?'🔔':EMOJI[r.phase]||'';
+    const prefix=!current?'':r.phase==='finished'&&r.read==='unread'?'🔔':EMOJI[r.phase]||'';
     const base=strip(document.title);
     const title=(prefix?prefix+' ':'')+base;
     if(document.title!==title)document.title=title;
@@ -146,12 +146,14 @@
     if(event.target?.closest?.(STOP)){tracker.cancel();publish();}
     // Route changes occur in React without always firing popstate.
     schedule();
-    setTimeout(schedule,350);
+    if(clickSettleJob)clearTimeout(clickSettleJob);
+    clickSettleJob=setTimeout(()=>{clickSettleJob=0;schedule();},350);
   }
   function onVisible(){if(!document.hidden){tracker.viewed();publish();}schedule();}
   function dispose(){
     observer?.disconnect();observer=null;
     if(job)clearTimeout(job);
+    if(clickSettleJob)clearTimeout(clickSettleJob);
     document.removeEventListener('click',onClick,true);
     document.removeEventListener('visibilitychange',onVisible);
     window.removeEventListener('popstate',schedule);

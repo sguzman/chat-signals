@@ -15,6 +15,7 @@ A Firefox-first, cross-browser WebExtension for observing the **state of a ChatG
 
 - [Historical failure autopsy](docs/AUTOPSY.md): symptoms, evidence, causes known or unknown, counterexamples and regression gates.
 - [State and evidence model](docs/STATE-MODEL.md): observer boundaries, transition semantics, unresolved cases.
+- [Detailed observability roadmap](docs/OBSERVABILITY.md): additional chat-state dimensions, evidence discipline, and Viewsource-backed research targets.
 - [Architecture and QA](docs/ARCHITECTURE.md): strict separation of capture, inference, identity and presentation.
 - [Development protocol](AGENTS.md): public-output protection, minimal regression fixes and browser safety.
 - [Reference sources](docs/SOURCES.md): original project history, provenance, Viewsource methodology, Mozilla WebExtension references.
