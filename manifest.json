@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "Chat Signals",
+  "version": "0.1.0",
+  "description": "Evidence-aware ChatGPT tab state and perceptual color identity.",
+  "permissions": [
+    "storage"
+  ],
+  "background": {
+    "scripts": [
+      "src/color.js",
+      "src/background.js"
+    ],
+    "service_worker": "src/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*"
+      ],
+      "js": [
+        "src/color.js",
+        "src/state.js",
+        "src/content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "chat-signals@sguzman.github"
+    }
+  }
+}

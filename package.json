@@ -1,0 +1,11 @@
+{
+  "name": "chat-signals",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ChatGPT tab state evidence and color identity",
+  "scripts": {
+    "test": "node --test tests/*.test.cjs",
+    "check": "node scripts/check.cjs && npm test"
+  },
+  "license": "MIT"
+}

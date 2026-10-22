@@ -1,0 +1,74 @@
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const {create}=require('../src/state.js');
+const key='synthetic-not-stored';
+const event=(overrides={})=>({key,stop:false,assistantToken:11,
+ actionToken:21,noticeKind:null,noticeToken:null,hidden:false,...overrides});
+
+test('HTTP absence and old action controls cannot prove completion',()=>{
+ const f=create();f.observe(event());
+ assert.equal(f.snapshot().phase,'idle');
+ f.observe(event({stop:true}));
+ assert.equal(f.snapshot().phase,'generating');
+ f.observe(event());
+ assert.equal(f.snapshot().phase,'verifying');
+ f.observe(event());
+ assert.equal(f.snapshot().phase,'verifying');
+ f.observe(event({assistantToken:12,actionToken:22}));
+ assert.equal(f.snapshot().phase,'finished');
+ assert.equal(f.snapshot().reason,'fresh-assistant-terminal-action');
+});
+test('manual Stop does not restart until visible Stop disappears',()=>{
+ const f=create();f.observe(event({stop:true}));
+ f.cancel();assert.equal(f.snapshot().phase,'idle');
+ f.observe(event({stop:true}));
+ assert.equal(f.snapshot().phase,'idle');
+ f.observe(event());
+ f.observe(event({stop:true}));
+ assert.equal(f.snapshot().phase,'generating');
+});
+test('incidental events cannot restart finished generation',()=>{
+ const f=create();
+ f.observe(event({stop:true}));f.observe(event({actionToken:22,assistantToken:12}));
+ assert.equal(f.snapshot().phase,'finished');
+ const before=f.snapshot().changed;
+ f.observe(event({actionToken:22,assistantToken:12}));
+ assert.equal(f.snapshot().changed,before);
+ assert.equal(f.snapshot().phase,'finished');
+ f.observe(event({stop:true,actionToken:22,assistantToken:12}));
+ assert.equal(f.snapshot().phase,'generating');
+});
+test('foreground/background only affect read status',()=>{
+ const f=create();
+ f.observe(event({stop:true}));f.observe(event({actionToken:22,assistantToken:12,hidden:true}));
+ assert.equal(f.snapshot().phase,'finished');
+ assert.equal(f.snapshot().read,'unread');
+ f.viewed();assert.equal(f.snapshot().phase,'finished');
+ assert.equal(f.snapshot().read,'viewed');
+});
+test('stale red/error warning cannot suppress completed response',()=>{
+ const f=create();
+ f.observe(event({noticeKind:'error',noticeToken:42}));
+ assert.equal(f.snapshot().phase,'idle');
+ f.observe(event({stop:true,noticeKind:'error',noticeToken:42}));
+ f.observe(event({stop:false,actionToken:22,assistantToken:12,noticeKind:'error',noticeToken:42}));
+ assert.equal(f.snapshot().phase,'finished');
+});
+test('interruption is not completion and can clear to verifying',()=>{
+ const f=create();
+ f.observe(event({stop:true}));
+ f.observe(event({noticeKind:'interrupted',noticeToken:43}));
+ assert.equal(f.snapshot().phase,'interrupted');
+ f.observe(event());
+ assert.equal(f.snapshot().phase,'verifying');
+});
+test('separate failure and limit evidence; route change resets epoch',()=>{
+ const f=create();f.observe(event({stop:true}));
+ f.observe(event({noticeKind:'response_load_failed',noticeToken:99}));
+ assert.equal(f.snapshot().phase,'failed');
+ f.observe(event({noticeKind:'limit',noticeToken:100}));
+ assert.equal(f.snapshot().phase,'limit');
+ f.observe({...event(),key:'other-synthetic-chat'});
+ assert.equal(f.snapshot().phase,'idle');
+ assert.equal(f.snapshot().epoch,0);
+});
