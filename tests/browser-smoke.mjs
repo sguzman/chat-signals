@@ -151,7 +151,32 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
       {href:'/synthetic-icon-a.ico',type:'image/x-icon',sizes:'16x16'},
       {href:'/synthetic-icon-b.svg',type:'image/svg+xml',sizes:'any'}
     ],'disposing restores the original favicon declarations');
-    console.log('PASS '+name+': generating -> verifying -> confirmed; stable PNG; restored favicon candidates; bounded streaming');
+    // A genuine Send button is a second independent submission path.
+    // Simulate a quick response with no observed Stop control at all.
+    const quick=await context.newPage();
+    try{
+      await quick.route('https://chatgpt.com/**',route=>route.fulfill({
+        contentType:'text/html',body:html,status:200
+      }));
+      await quick.goto('https://chatgpt.com/c/synthetic-chat-quick');
+      for(const script of scripts)await quick.addScriptTag({content:script});
+      await quick.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='idle');
+      await quick.evaluate(()=>{
+        const send=document.createElement('button');send.dataset.testid='send-button';
+        send.type='button';send.textContent='Send';document.querySelector('form').append(send);
+        send.click();
+      });
+      await quick.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='submitted');
+      assert.match(await quick.title(),/^📤 /u);
+      await quick.evaluate(()=>{
+        const reply=document.createElement('article');
+        reply.innerHTML='<div data-message-author-role="assistant"><button aria-label="Copy">Copy</button></div>';
+        document.querySelector('main').append(reply);
+      });
+      await quick.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='finished');
+      assert.match(await quick.title(),/^✅ /u);
+    }finally{await quick.close();}
+    console.log('PASS '+name+': submit -> generating -> verifying -> finished and fast submit -> finished');
   }finally{
     await context.close();await browser.close();
   }
