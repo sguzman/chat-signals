@@ -21,6 +21,23 @@ A Firefox-first, cross-browser WebExtension for observing the **state of a ChatG
 - [Development protocol](AGENTS.md): public-output protection, minimal regression fixes and browser safety.
 - [Reference sources](docs/SOURCES.md): original project history, provenance, Viewsource methodology, Mozilla WebExtension references.
 
+## Permanent Firefox installation (unlisted signing)
+
+Firefox Release requires a Mozilla-signed add-on. No listing in the public add-on directory is required.
+
+1. Update local checkout of `main`: `git pull --ff-only`.
+2. From the repo root, package **only required extension files** (avoid `.git`, tests, internal docs and private data):
+   `python3 -m zipfile -c chat-signals-0.3.1.zip manifest.json src/*.js icons/completion.png`.
+   The manifest must be at the archive root.
+3. Sign into [Mozilla Add-ons Developer Hub](https://addons.mozilla.org/developers/) and submit a new add-on. Select **On your own** (unlisted / self-distribution), not **On this site**. Upload the generated ZIP and follow the validation/signing steps.
+4. When signing is complete, download the **signed XPI** from the add-on's version page in the Developer Hub. **Do not** rename the unsigned ZIP to XPI and expect Firefox Release to accept it.
+5. In the Firefox profile where Chat Signals will live, open `about:addons`, click the gear icon, select **Install Add-on From File**, select the signed XPI and accept permissions. Remove the temporary Chat Signals instance first if installing into the same spare profile.
+6. Open a new ChatGPT tab and check the favicon, status, completion chime and desktop notification.
+
+The add-on declares `data_collection_permissions.required=["none"]`: it does not transmit user data outside the local browser. It uses browser storage for temporary hashed chat identifiers and allocated colors; this is local-only, not telemetry.
+
+Unlisted/sideloaded releases **do not automatically update** from this GitHub repo. Unless a supported signed update URL is configured later, new releases must be signed and installed manually. Do not commit AMO account credentials or signing keys to this repository.
+
 ## Development installation
 
 **Firefox:** open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select this repository's `manifest.json`. This lasts until Firefox restarts; permanent installation normally requires signing. No script touches an existing browser profile automatically.

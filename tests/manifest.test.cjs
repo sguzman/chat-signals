@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const manifest=require('../manifest.json');
 test('narrow cross-browser MV3 with Firefox event page and Chromium worker',()=>{
  assert.equal(manifest.manifest_version,3);
+ assert.deepEqual(manifest.browser_specific_settings.gecko.data_collection_permissions,{required:['none']});
  assert.deepEqual(manifest.permissions,['storage','notifications']);
  assert.deepEqual(manifest.content_scripts[0].js,['src/color.js','src/state.js','src/alerts.js','src/chime.js','src/content.js']);
  assert.deepEqual(manifest.background.scripts,['src/color.js','src/background.js']);

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Chat Signals",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Evidence-aware ChatGPT tab state and perceptual color identity.",
   "permissions": [
     "storage",
@@ -32,7 +32,12 @@
   ],
   "browser_specific_settings": {
     "gecko": {
-      "id": "chat-signals@sguzman.github"
+      "id": "chat-signals@sguzman.github",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
     }
   }
 }
