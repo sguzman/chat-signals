@@ -111,9 +111,11 @@ try{
   await a.evaluate(()=>document.querySelector('[data-testid="fruitjuice-stop-button"]').remove());
   await a.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='verifying');
   await a.evaluate(()=>{
-    const reply=document.createElement('article');reply.dataset.testid='conversation-turn-new';
-    reply.innerHTML='<div data-message-author-role="assistant"><button aria-label="Copy">Copy</button></div>';
-    document.querySelector('main').append(reply);
+    const turn=document.createElement('div');turn.dataset.testid='conversation-turn-new';
+    turn.innerHTML='<article data-message-author-role="assistant">'+
+      '<div class="answer-shell"></div></article>'+
+      '<div class="turn-action-controls"><button aria-label="Copy">Copy</button></div>';
+    document.querySelector('main').append(turn);
   });
   await a.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='finished');
   const after=await a.evaluate(()=>({

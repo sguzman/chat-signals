@@ -44,3 +44,7 @@ Do not read user/assistant transcript text to classify content. Only narrow, sho
 The first implementation can observe user submission intent, DOM-visible generations and final action controls. Submitted intent becomes unknown after nine seconds without further evidence; it is not proof of a network operation. State coverage gaps are documented, not silently filled with request success. A richer network/transport cross-check and source-level ChatGPT study are **subsequent research tasks**, not claims of implemented behavior.
 
 The visible initial state of a recognized idle conversation is ⚪. Explicit assistant-turn markers may establish generation even without Stop evidence. Fresh completed reply actions are still required for ✅, and changes to an old assistant's toolbar alone are not completion evidence. New replies can resolve a previously unknown submission rather than leaving it permanently unconfirmed.
+
+## Terminal controls in nested turns
+
+A response's Copy control can be a sibling of the assistant's inner article within the same conversation-turn container. Completion observation must use the **current assistant turn container** as scope; checking only inside the article misses valid completion, while checking the entire document permits a stale prior turn to masquerade as a new result. A nested-toolbar fixture and stale-previous-toolbar counterexample enforce this distinction. No conversation text is read.

@@ -169,20 +169,35 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
       await quick.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='submitted');
       assert.match(await quick.title(),/^📤 /u);
       await quick.evaluate(()=>{
-        const reply=document.createElement('article');
-        reply.dataset.testid='conversation-turn-new';
-        reply.dataset.turn='assistant';
-        reply.innerHTML='<div class="answer-shell"></div>';
-        document.querySelector('main').append(reply);
+        const turn=document.createElement('div');
+        turn.dataset.testid='conversation-turn-new';
+        // Realistic nested reply: controls belong to the turn, not to article.
+        turn.innerHTML='<article data-message-author-role="assistant">'+
+          '<div class="answer-shell"></div></article>'+
+          '<div class="turn-action-controls"></div>';
+        document.querySelector('main').append(turn);
       });
       await quick.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='generating');
       assert.match(await quick.title(),/^⏳ /u);
-      // No Stop button: a terminal Copy action still certifies completion.
+      // An old reply can have a freshly rebuilt Copy button. That must
+      // not finish the new, still incomplete assistant turn.
+      await quick.evaluate(()=>{
+        const old=document.querySelector('[data-testid="conversation-turn-old"]');
+        const rebuilt=document.createElement('button');
+        rebuilt.setAttribute('aria-label','Copy');
+        old.append(rebuilt);
+      });
+      await quick.waitForTimeout(400);
+      assert.equal(await quick.evaluate(()=>
+        document.documentElement.dataset.chatSignalsState),'generating');
+      // No Stop button: a terminal Copy action beside, not inside, the new
+      // assistant article confirms the current response finished.
       await quick.evaluate(()=>{
         const action=document.createElement('button');
         action.dataset.testid='copy-turn-action-button';
         action.textContent='Copy';
-        document.querySelector('[data-testid="conversation-turn-new"]').append(action);
+        document.querySelector('[data-testid="conversation-turn-new"] .turn-action-controls')
+          .append(action);
       });
       await quick.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='finished');
       assert.match(await quick.title(),/^✅ /u);

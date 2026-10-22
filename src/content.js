@@ -36,8 +36,13 @@
     walker.currentNode=last;
     for(let i=0;i<768;i++){
       node=walker.currentNode;
-      if(node?.matches?.(ASSISTANT))
-        return node.closest('article,[data-testid^="conversation-turn"]')||node;
+      if(node?.matches?.(ASSISTANT)){
+        // ChatGPT may render terminal action controls beside an inner reply
+        // <article>, inside the encompassing conversation-turn wrapper.
+        // Prefer that wrapper; never search the whole page for Copy.
+        return node.closest('[data-testid^="conversation-turn"],[data-turn-key]')||
+          node.closest('article')||node;
+      }
       if(!walker.previousNode())break;
     }
     return null;
