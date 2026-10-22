@@ -30,8 +30,8 @@ function start(){
   }
   const register=(id,key,documentToken=nonce)=>send(id,{
     type:'chat-signals-register',key,documentToken});
-  const complete=(id,key,epoch=1,documentToken=nonce,origin)=>send(id,{
-    type:'chat-signals-complete',key,epoch,documentToken},origin);
+  const complete=(id,key,epoch=1,documentToken=nonce,origin,iconUrl)=>send(id,{
+    type:'chat-signals-complete',key,epoch,documentToken,iconUrl},origin);
   return {register,complete,remove:id=>removed(id),read:()=>session,
     notifications:()=>notifications};
 }
@@ -102,4 +102,15 @@ test('no completion notification before a registered active tab',async()=>{
  const w=start(),key=color.hash('chat:synthetic-only');
  assert.equal((await w.complete(20,key,1)).created,false);
  assert.equal(w.notifications().length,0);
+});
+
+test('per-chat colored notification icon matches favicon; invalid URL falls back',async()=>{
+ const w=start(),key=color.hash('chat:synthetic-only');
+ await w.register(23,key);
+ const colored='data:image/png;base64,'+'A'.repeat(64);
+ assert.equal((await w.complete(23,key,1,undefined,undefined,colored)).created,true);
+ assert.equal(w.notifications()[0].options.iconUrl,colored);
+ assert.equal((await w.complete(23,key,2,undefined,undefined,'https://example.invalid/evil')).created,true);
+ assert.equal(w.notifications()[1].options.iconUrl,
+   'moz-extension://synthetic/icons/completion.png');
 });

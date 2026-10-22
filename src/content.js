@@ -231,7 +231,8 @@
     if(globalThis.chrome?.runtime?.sendMessage){
       try{
         chrome.runtime.sendMessage({type:'chat-signals-complete',
-          key:color.hash(current.key),documentToken,epoch:next.epoch},answer=>{
+          key:color.hash(current.key),documentToken,epoch:next.epoch,
+          iconUrl:currentHex?drawIcon(currentHex,current.kind):null},answer=>{
           document.documentElement.dataset.chatSignalsNotification=
             answer?.created?'requested':'unavailable';
         });

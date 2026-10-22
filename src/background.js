@@ -35,7 +35,7 @@
     await put(slots);
     return {hex};
   }
-  function notify(tabId,key,documentToken,epoch){
+  function notify(tabId,key,documentToken,epoch,iconUrl){
     return serialize(async()=>{
       const slots=await get(),slot=slots[String(tabId)];
       if(!slot||slot.key!==key||slot.documentToken!==documentToken||
@@ -45,9 +45,10 @@
       slot.delivered=epoch;
       await put(slots);
       if(!chrome.notifications?.create)return {created:false,reason:'unavailable'};
+      const icon=/^data:image\/png;base64,[A-Za-z0-9+/=]{40,8192}$/.test(iconUrl||'')?
+        iconUrl:chrome.runtime.getURL('icons/completion.png');
       const options={type:'basic',title:'Chat Signals',
-        message:'Response finished.',
-        iconUrl:chrome.runtime.getURL('icons/completion.png')};
+        message:'Response finished.',iconUrl:icon};
       return new Promise(resolve=>{
         try{
           chrome.notifications.create('chat-signals-tab-'+tabId,options,()=>{
@@ -70,7 +71,7 @@
     }
     if(request.type==='chat-signals-complete'&&
        Number.isSafeInteger(request.epoch)&&request.epoch>=1){
-      notify(tabId,request.key,request.documentToken,request.epoch)
+      notify(tabId,request.key,request.documentToken,request.epoch,request.iconUrl)
         .then(reply,()=>reply({created:false,reason:'error'}));
       return true;
     }
