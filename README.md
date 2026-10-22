@@ -20,6 +20,18 @@ A Firefox-first, cross-browser WebExtension for observing the **state of a ChatG
 - [Development protocol](AGENTS.md): public-output protection, minimal regression fixes and browser safety.
 - [Reference sources](docs/SOURCES.md): original project history, provenance, Viewsource methodology, Mozilla WebExtension references.
 
+## Development installation
+
+**Firefox:** open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select this repository's `manifest.json`. This lasts until Firefox restarts; permanent installation normally requires signing. No script touches an existing browser profile automatically.
+
+**Chromium/Edge:** use the browser's extensions page, enable developer mode, and select **Load unpacked** on this repository directory. These are developer-only installation instructions; no published store release exists.
+
+Disable the historical ChatGPT Tab Signal extension before trying Chat Signals in the same browser profile. Running both would create competing title and favicon writers. Already-open ChatGPT tabs are not automatically updated or reloaded after installing/reloading Chat Signals; open a new chat page for an unambiguous test.
+
+The extension does not yet implement the historical notification chime or native completion notification. That parity work is downstream of reliable completion observation, not silently omitted from the roadmap.
+
+Run `npm run check` for dependency-free unit/safety tests. The CI synthetic browser suite injects scripts into intercepted Firefox and Chromium fixtures; it does **not** prove that an unpacked extension is installed or fully interoperable with live ChatGPT.
+
 ## Status and limits
 
 This repository starts with **independent MIT-licensed code**. The historical extension in [script-monkey](https://github.com/sguzman/script-monkey/tree/main/extensions/chatgpt-tab-signal) was adapted from an AGPL-3.0 upstream; its source has **not** been copied here. Past failure findings are technical, independently written descriptions.
