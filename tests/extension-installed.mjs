@@ -38,6 +38,20 @@ try{
   const b=await visit('normal-002');
   const project=await visit('project-001','/g/g-p-example123/c/synthetic-chat-project-001');
   const gpt=await visit('gpt-001','/g/g-example123/c/synthetic-chat-gpt-001');
+  // The initial favicon has a deterministic fallback while worker registration
+  // completes. Wait for the real registered assignments before comparing tabs.
+  let slots={};
+  for(let i=0;i<40;i++){
+    slots=await worker.evaluate(async()=>
+      (await chrome.storage.session.get('chatSignalsSessionAllocationsV1')).chatSignalsSessionAllocationsV1||{});
+    if(Object.keys(slots).length===4)break;
+    await a.waitForTimeout(100);
+  }
+  assert.equal(Object.keys(slots).length,4,'real background worker must register each tab');
+  const swatches=Object.values(slots).map(x=>x.hex);
+  await Promise.all([a,b,project,gpt].map(async tab=>
+    tab.waitForFunction(allocated=>allocated.includes(
+      document.documentElement.dataset.chatSignalsColor),swatches,{timeout:5000})));
   const first=await a.evaluate(()=>({
     color:document.documentElement.dataset.chatSignalsColor,
     icon:document.querySelector('link[data-chat-signals-icon]')?.href,
@@ -65,9 +79,6 @@ try{
   assert.ok(await atEdge(a)>200,'normal chat favicon should be a square');
   assert.ok(await atEdge(gpt)>200,'GPT favicon should be a rounded square');
   assert.ok(await atEdge(project)<30,'project favicon should be circular');
-  const slots=await worker.evaluate(async()=>
-    (await chrome.storage.session.get('chatSignalsSessionAllocationsV1')).chatSignalsSessionAllocationsV1);
-  assert.equal(Object.keys(slots||{}).length,4,'real background worker must register each tab');
   assert.ok(Object.values(slots).every(x=>/^[0-9a-f]{16}$/.test(x.key)));
   assert.ok(first.icon?.startsWith('data:image/png;base64,'));
   assert.ok(second.icon?.startsWith('data:image/png;base64,'));
