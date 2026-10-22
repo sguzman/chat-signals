@@ -48,7 +48,9 @@
         stopSeen=true;
         if(phase==='submitted'){
           phase='generating';reason='stop-visible';
-        }else if(phase!=='generating'&&phase!=='verifying'&&phase!=='interrupted')begin(sample);
+        }else if(phase!=='generating'&&phase!=='verifying'&&
+          phase!=='interrupted'&&phase!=='failed'&&phase!=='limit')
+          begin(sample); // stale Stop cannot manufacture new error epochs
         else if(phase!=='generating'){phase='generating';reason='stop-visible';}
       }else if(phase==='generating'&&stopSeen){
         stopSeen=false;

@@ -5,6 +5,12 @@
     importScripts('color.js');
   const colors=root.ChatSignalsColor;
   const KEY='chatSignalsSessionAllocationsV1';
+  const EVENT_INFO=Object.freeze({
+    completion:Object.freeze({category:'Success',message:'Response finished.'}),
+    interruption:Object.freeze({category:'Warning',message:'Connection interrupted.'}),
+    failure:Object.freeze({category:'Error',message:'A response or conversation failed.'}),
+    limit:Object.freeze({category:'Warning',message:'Conversation length limit reached.'})
+  });
   let chain=Promise.resolve(),fallback={};
   const area=chrome.storage?.session;
   function get(){
@@ -29,26 +35,34 @@
     const occupied=[...new Set(Object.values(slots).filter(x=>x.key!==key).map(x=>x.hex))];
     const hex=previous?.hex||colors.choose(key,occupied);
     const prior=slots[String(tabId)];
-    const delivered=prior?.key===key&&prior.documentToken===documentToken?
-      prior.delivered||0:0;
-    slots[String(tabId)]={key,hex,documentToken,delivered};
+    const sameDocument=prior?.key===key&&prior.documentToken===documentToken;
+    const delivered=sameDocument?prior.delivered||0:0;
+    const deliveredEvents=sameDocument?prior.deliveredEvents||{}:{};
+    slots[String(tabId)]={key,hex,documentToken,delivered,deliveredEvents};
     await put(slots);
     return {hex};
   }
-  function notify(tabId,key,documentToken,epoch,iconUrl){
+  function notify(tabId,key,documentToken,epoch,kind,iconUrl){
     return serialize(async()=>{
       const slots=await get(),slot=slots[String(tabId)];
-      if(!slot||slot.key!==key||slot.documentToken!==documentToken||
-         slot.delivered>=epoch)return {created:false,reason:'not-current'};
+      const detail=EVENT_INFO[kind];
+      if(!slot||!detail||slot.key!==key||slot.documentToken!==documentToken)
+        return {created:false,reason:'not-current'};
+      const notified=slot.deliveredEvents||{};
+      if((notified[kind]||0)>=epoch||
+         (kind==='completion'&&(slot.delivered||0)>=epoch))
+        return {created:false,reason:'duplicate'};
       // Commit the one-shot notification before invoking OS delivery; a
       // background page suspension must not replay a completed response.
-      slot.delivered=epoch;
+      notified[kind]=epoch;
+      slot.deliveredEvents=notified;
+      if(kind==='completion')slot.delivered=epoch; // old lifecycle ledger compatibility
       await put(slots);
       if(!chrome.notifications?.create)return {created:false,reason:'unavailable'};
       const icon=/^data:image\/png;base64,[A-Za-z0-9+/=]{40,8192}$/.test(iconUrl||'')?
         iconUrl:chrome.runtime.getURL('icons/completion.png');
-      const options={type:'basic',title:'Chat Signals',
-        message:'Response finished.',iconUrl:icon};
+      const options={type:'basic',title:'Chat Signals - '+detail.category,
+        message:detail.message,iconUrl:icon};
       return new Promise(resolve=>{
         try{
           chrome.notifications.create('chat-signals-tab-'+tabId,options,()=>{
@@ -69,9 +83,10 @@
         .then(reply,()=>reply({hex:null}));
       return true;
     }
-    if(request.type==='chat-signals-complete'&&
-       Number.isSafeInteger(request.epoch)&&request.epoch>=1){
-      notify(tabId,request.key,request.documentToken,request.epoch,request.iconUrl)
+    const kind=request.type==='chat-signals-complete'?'completion':
+      request.type==='chat-signals-event'?request.event:null;
+    if(EVENT_INFO[kind]&&Number.isSafeInteger(request.epoch)&&request.epoch>=1){
+      notify(tabId,request.key,request.documentToken,request.epoch,kind,request.iconUrl)
         .then(reply,()=>reply({created:false,reason:'error'}));
       return true;
     }

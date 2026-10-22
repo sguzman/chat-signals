@@ -48,3 +48,7 @@ The visible initial state of a recognized idle conversation is ⚪. Explicit ass
 ## Terminal controls in nested turns
 
 A response's Copy control can be a sibling of the assistant's inner article within the same conversation-turn container. Completion observation must use the **current assistant turn container** as scope; checking only inside the article misses valid completion, while checking the entire document permits a stale prior turn to masquerade as a new result. A nested-toolbar fixture and stale-previous-toolbar counterexample enforce this distinction. No conversation text is read.
+
+## Alerts: events are not every state mutation
+
+Only an observed entry into `finished`, `interrupted`, `failed` or `limit` during a known active response epoch is alertable, with separate event types and independent once-per-epoch deduplication. Routine transitions and `finished/unread → finished/viewed` are never alertable. A warning may be followed by a success on recovery within the same response attempt, but repeated warnings in that attempt remain silent. A state observed upon opening an older conversation without a new response attempt does not make a desktop alert. Alert sounds do not participate in evidence inference.

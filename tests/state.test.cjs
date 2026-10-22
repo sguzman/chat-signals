@@ -142,3 +142,26 @@ test('a delayed reply can recover from unconfirmed submission',()=>{
  f.observe(event({assistantToken:12,actionToken:22}));
  assert.equal(f.snapshot().phase,'finished');
 });
+
+test('a stale Stop during failure or limit does not manufacture new response epochs',()=>{
+ const key='synthetic-chat';
+ const sample=(more={})=>({key,stop:false,assistantToken:1,actionToken:null,
+    noticeToken:null,noticeKind:null,hidden:false,...more});
+ const f=create();f.observe(sample());f.intent(sample());
+ f.observe(sample({stop:true}));
+ f.observe(sample({stop:true,noticeKind:'error',noticeToken:50}));
+ assert.equal(f.snapshot().phase,'failed');
+ const epoch=f.snapshot().epoch;
+ f.observe(sample({stop:true,noticeKind:'error',noticeToken:50}));
+ f.observe(sample({stop:true,noticeKind:'error',noticeToken:50}));
+ assert.equal(f.snapshot().epoch,epoch);
+ assert.equal(f.snapshot().phase,'failed');
+ f.intent(sample());
+ assert.equal(f.snapshot().epoch,epoch+1);
+ const limit=create();limit.observe(sample());limit.intent(sample());
+ limit.observe(sample({noticeKind:'limit',noticeToken:60}));
+ const limitEpoch=limit.snapshot().epoch;
+ limit.observe(sample({stop:true,noticeKind:'limit',noticeToken:60}));
+ assert.equal(limit.snapshot().epoch,limitEpoch);
+ assert.equal(limit.snapshot().phase,'limit');
+});

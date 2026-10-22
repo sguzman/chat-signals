@@ -44,3 +44,37 @@ test('missing WebAudio does not crash or claim audible playback',async()=>{
   assert.equal(await sandbox.ChatSignalsChime.unlock(),'unavailable');
   assert.equal(await sandbox.ChatSignalsChime.play(),'blocked');
 });
+
+test('four event motifs remain short and acoustically distinct',async()=>{
+ const motifTest=[
+  ['success',2,true],
+  ['warning',2,false],
+  ['error',2,false],
+  ['limit',3,false]
+ ];
+ const signature=[];
+ for(const [kind,count,ascending] of motifTest){
+   const s=start(true);
+   assert.equal(await s.api.play(kind),'scheduled');
+   assert.equal(s.calls.filter(x=>x[0]==='start').length,count);
+   assert.equal(s.calls.filter(x=>x[0]==='stop').length,count);
+   const tones=s.api.MOTIFS[kind];
+   assert.equal(tones.length,count);
+   if(ascending)assert.ok(tones[0][0]<tones[1][0]);
+   if(kind==='warning'||kind==='limit')
+     assert.ok(tones[0][0]>tones.at(-1)[0]);
+   if(kind==='error')
+     assert.equal(tones[0][1],tones[1][1],'mild dissonant simultaneous pair');
+   assert.ok(tones.every(([frequency,offset,duration])=>
+     frequency>=200&&frequency<1000&&offset+duration<=0.45));
+   signature.push(tones.map(x=>x[0]+':'+x[1]).join('|'));
+ }
+ assert.equal(new Set(signature).size,4);
+});
+test('neutral states never play sound, even if audio is ready',async()=>{
+ const s=start(true);
+ for(const kind of ['idle','submitted','generating','verifying','unknown','viewed','recovered']){
+   assert.equal(await s.api.play(kind),'silent');
+ }
+ assert.equal(s.calls.length,0);
+});

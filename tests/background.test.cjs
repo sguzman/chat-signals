@@ -32,7 +32,9 @@ function start(){
     type:'chat-signals-register',key,documentToken});
   const complete=(id,key,epoch=1,documentToken=nonce,origin,iconUrl)=>send(id,{
     type:'chat-signals-complete',key,epoch,documentToken,iconUrl},origin);
-  return {register,complete,remove:id=>removed(id),read:()=>session,
+  const event=(id,key,kind,epoch=1,documentToken=nonce,origin,iconUrl)=>send(id,{
+    type:'chat-signals-event',event:kind,key,epoch,documentToken,iconUrl},origin);
+  return {register,complete,event,remove:id=>removed(id),read:()=>session,
     notifications:()=>notifications};
 }
 
@@ -75,7 +77,7 @@ test('desktop completion notification fires once and never contains chat text',a
  const first=await w.complete(7,key,1);
  assert.equal(first.created,true);
  assert.equal(w.notifications().length,1);
- assert.equal(w.notifications()[0].options.title,'Chat Signals');
+ assert.equal(w.notifications()[0].options.title,'Chat Signals - Success');
  assert.equal(w.notifications()[0].options.message,'Response finished.');
  assert.equal(w.notifications()[0].options.iconUrl,'moz-extension://synthetic/icons/completion.png');
  assert.equal((await w.complete(7,key,1)).created,false,'duplicate epoch');
@@ -113,4 +115,49 @@ test('per-chat colored notification icon matches favicon; invalid URL falls back
  assert.equal((await w.complete(23,key,2,undefined,undefined,'https://example.invalid/evil')).created,true);
  assert.equal(w.notifications()[1].options.iconUrl,
    'moz-extension://synthetic/icons/completion.png');
+});
+
+test('different state alerts have independent categories, messages and idempotence',async()=>{
+ const w=start(),key=color.hash('chat:synthetic-only');
+ await w.register(33,key);
+ const cases=[
+  ['interruption','Chat Signals - Warning','Connection interrupted.'],
+  ['failure','Chat Signals - Error','A response or conversation failed.'],
+  ['limit','Chat Signals - Warning','Conversation length limit reached.'],
+  ['completion','Chat Signals - Success','Response finished.']
+ ];
+ for(const [kind,title,message] of cases){
+   assert.equal((await w.event(33,key,kind)).created,true,kind);
+   const latest=w.notifications().at(-1).options;
+   assert.equal(latest.title,title);
+   assert.equal(latest.message,message);
+   assert.equal((await w.event(33,key,kind)).created,false,'no duplicate '+kind);
+ }
+ assert.equal(w.notifications().length,4);
+ assert.equal(w.notifications()[0].id,w.notifications()[3].id);
+ assert.equal((await w.event(33,key,'unknown')).rejected,true);
+});
+test('recovery and read transition cause no background event; source may not supply notification text',async()=>{
+ const w=start(),key=color.hash('chat:synthetic-only');
+ await w.register(47,key);
+ await w.event(47,key,'completion',1);
+ const one=w.notifications().length;
+ // The background only accepts enumerated event names, not claimed state.
+ assert.equal((await w.event(47,key,'viewed',1)).rejected,true);
+ assert.equal((await w.event(47,key,'recovery',1)).rejected,true);
+ assert.equal(w.notifications().length,one);
+ // A second new epoch is permitted, but a replay of the old one isn't.
+ assert.equal((await w.event(47,key,'completion',1)).created,false);
+ assert.equal((await w.event(47,key,'completion',2)).created,true);
+ assert.equal(w.notifications().length,one+1);
+ assert.ok(w.notifications().every(x=>!x.options.message.includes('synthetic-only')));
+});
+test('re-registering same document preserves alert ledger, replacing document clears it',async()=>{
+ const w=start(),key=color.hash('chat:synthetic-only');
+ await w.register(48,key);
+ await w.event(48,key,'interruption',1);
+ await w.register(48,key);
+ assert.equal((await w.event(48,key,'interruption',1)).created,false);
+ await w.register(48,key,'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+ assert.equal((await w.event(48,key,'interruption',1,'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')).created,true);
 });

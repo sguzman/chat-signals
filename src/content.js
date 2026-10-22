@@ -6,9 +6,9 @@
   if(!color||!state)return;
   const owner={dispose};globalThis.__chatSignalsOwner=owner;
   const tracker=state.create();
+  const eventAlerts=globalThis.ChatSignalsAlerts?.create();
   // Random per-document nonce: no page URL, prompt, title or user data is sent.
   const documentToken=crypto.randomUUID().replace(/-/g,'');
-  let lastNotifiedEpoch=0;
   const tokens=new WeakMap();
   const originalFavicons=new Map();
   let tokenCount=0,current=null,currentHex=null,observer=null,observedMain=null,
@@ -218,20 +218,20 @@
     });
     observer.observe(main,{subtree:true,childList:true});
   }
-  function notifyCompletion(previous,next){
-    if(!current||next.phase!=='finished'||previous.phase==='finished'||
-       next.epoch<1||next.epoch<=lastNotifiedEpoch)return;
-    lastNotifiedEpoch=next.epoch;
-    // Sound and desktop notification are independent outputs of the same
-    // confirmed transition. They run for foreground and background tabs.
+  function emitEvent(previous,next){
+    if(!current||!eventAlerts)return;
+    const event=eventAlerts.transition(previous,next);
+    if(!event)return;
+    // Read/unread changes and routine transitions never create an event.
     const chime=globalThis.ChatSignalsChime;
-    if(chime?.play)void chime.play().then(outcome=>{
+    if(chime?.play)void chime.play(event.sound).then(outcome=>{
       document.documentElement.dataset.chatSignalsSound=outcome;
     },()=>{document.documentElement.dataset.chatSignalsSound='blocked';});
     if(globalThis.chrome?.runtime?.sendMessage){
       try{
-        chrome.runtime.sendMessage({type:'chat-signals-complete',
-          key:color.hash(current.key),documentToken,epoch:next.epoch,
+        chrome.runtime.sendMessage({type:'chat-signals-event',
+          event:event.kind,key:color.hash(current.key),
+          documentToken,epoch:next.epoch,
           iconUrl:currentHex?drawIcon(currentHex,current.kind):null},answer=>{
           document.documentElement.dataset.chatSignalsNotification=
             answer?.created?'requested':'unavailable';
@@ -245,7 +245,8 @@
     queued=false;job=0;
     const next=color.identity(location.href);
     if(next?.key!==current?.key){
-      current=next;currentHex=null;lastNotifiedEpoch=0;
+      current=next;currentHex=null;
+      eventAlerts?.reset(next?.key||null);
       previousState=-1;tracker.reset(next?.key||null);
       if(!next){++routeNonce;paintIdentity();}
       else allocate();
@@ -254,7 +255,7 @@
     if(!current){publish();return;}
     const previous=tracker.snapshot();
     tracker.observe(sample());
-    notifyCompletion(previous,tracker.snapshot());
+    emitEvent(previous,tracker.snapshot());
     publish();
   }
   function schedule(){

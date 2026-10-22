@@ -133,7 +133,8 @@ try{
     const values=await worker.evaluate(async()=>
       (await chrome.storage.session.get('chatSignalsSessionAllocationsV1')).chatSignalsSessionAllocationsV1||{});
     observedDelivery=Object.values(values).some(x=>
-      x.key===Object.values(slots)[0].key&&x.delivered===1);
+      x.key===Object.values(slots)[0].key&&x.delivered===1&&
+      x.deliveredEvents?.completion===1);
     if(observedDelivery)break;
     await a.waitForTimeout(100);
   }

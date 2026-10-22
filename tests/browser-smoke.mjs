@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {firefox,chromium} from 'playwright';
 const read=name=>readFile(new URL('../'+name,import.meta.url),'utf8');
-const scripts=await Promise.all(['src/color.js','src/state.js','src/chime.js','src/content.js'].map(read));
+const scripts=await Promise.all(['src/color.js','src/state.js','src/alerts.js','src/chime.js','src/content.js'].map(read));
 const html='<!doctype html><html><head><title>Synthetic Chat</title>'+
   '<link rel="icon" href="/synthetic-icon-a.ico" type="image/x-icon" sizes="16x16">'+
   '<link rel="icon" href="/synthetic-icon-b.svg" type="image/svg+xml" sizes="any">'+
@@ -213,6 +213,11 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
       await quick.waitForTimeout(400);
       assert.equal(await quick.evaluate(()=>
         document.documentElement.dataset.chatSignalsState),'generating');
+      // Simulate finishing while hidden, then viewing the tab. The latter
+      // must never create a second completion cue.
+      await quick.evaluate(()=>{
+        Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});
+      });
       // No Stop button: a terminal Copy action beside, not inside, the new
       // assistant article confirms the current response finished.
       await quick.evaluate(()=>{
@@ -223,12 +228,67 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
           .append(action);
       });
       await quick.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='finished');
-      assert.match(await quick.title(),/^✅ /u);
+      await quick.waitForFunction(()=>document.title.startsWith('🔔 '));
       await quick.waitForFunction(()=>window.__completionChimes===1);
+      await quick.evaluate(()=>{
+        Object.defineProperty(document,'hidden',{configurable:true,get:()=>false});
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      await quick.waitForFunction(()=>document.title.startsWith('✅ '));
       await quick.waitForTimeout(400);
-      assert.equal(await quick.evaluate(()=>window.__completionChimes),1);
+      assert.equal(await quick.evaluate(()=>window.__completionChimes),1,
+        '🔔 unread -> ✅ viewed must not replay the chime');
     }finally{await quick.close();}
-    console.log('PASS '+name+': submit -> generating -> verifying -> finished and assistant turn -> generating -> finished (no Stop)');
+    // Distinct UI-confirmed warnings/errors/limits, with no repeated sound
+    // for repeated DOM observations of the same synthetic event.
+    for(const [kind,statusText,expectedSound] of [
+      ['interrupted','Connection interrupted. Waiting for the complete answer','warning'],
+      ['failed','Something went wrong','error'],
+      ['limit','Conversation is too long','limit']
+    ]){
+      const diagnostic=await context.newPage();
+      try{
+        await diagnostic.route('https://chatgpt.com/**',route=>route.fulfill({
+          contentType:'text/html',body:html,status:200
+        }));
+        await diagnostic.goto('https://chatgpt.com/c/synthetic-notice-'+kind);
+        for(const script of scripts)await diagnostic.addScriptTag({content:script});
+        await diagnostic.evaluate(()=>{
+          window.__sounds=[];
+          window.ChatSignalsChime={
+            unlock:async()=> 'ready',
+            play:async type=>{window.__sounds.push(type);return 'scheduled';}
+          };
+        });
+        await diagnostic.waitForFunction(()=>
+          document.documentElement.dataset.chatSignalsState==='idle');
+        await diagnostic.evaluate(()=>{
+          document.getElementById('prompt-textarea').dispatchEvent(
+            new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
+        });
+        await diagnostic.waitForFunction(()=>
+          document.documentElement.dataset.chatSignalsState==='submitted');
+        await diagnostic.evaluate(text=>{
+          const notice=document.createElement('div');
+          notice.setAttribute('role','alert');notice.textContent=text;
+          document.querySelector('main').append(notice);
+        },statusText);
+        await diagnostic.waitForFunction(kind=>
+          document.documentElement.dataset.chatSignalsState===kind,kind);
+        await diagnostic.waitForFunction(()=>window.__sounds.length===1);
+        assert.deepEqual(await diagnostic.evaluate(()=>window.__sounds),
+          [expectedSound]);
+        await diagnostic.evaluate(()=>{
+          const alert=document.querySelector('[role="alert"]');
+          const sibling=document.createElement('span');sibling.textContent='Unrelated';
+          alert.append(sibling);sibling.remove();
+        });
+        await diagnostic.waitForTimeout(350);
+        assert.deepEqual(await diagnostic.evaluate(()=>window.__sounds),
+          [expectedSound],'no duplicate alert from incidental DOM mutation');
+      }finally{await diagnostic.close();}
+    }
+    console.log('PASS '+name+': confirmed completion, 🔔->✅ silence, and one-shot warning/error/limit cues');
   }finally{
     await context.close();await browser.close();
   }
