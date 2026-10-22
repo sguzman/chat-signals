@@ -97,11 +97,13 @@ try{
   assert.equal(first.title,'Synthetic Chat');
 
   await a.evaluate(()=>{
-    const stop=document.createElement('button');stop.dataset.testid='stop-button';
+    const stop=document.createElement('button');stop.dataset.testid='fruitjuice-stop-button';
     stop.textContent='Stop';document.querySelector('form').append(stop);
   });
   await a.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='generating');
-  await a.evaluate(()=>document.querySelector('[data-testid="stop-button"]').remove());
+  await a.evaluate(()=>{document.title='Synthetic Chat';});
+  await a.waitForFunction(()=>document.title.startsWith('⏳ '));
+  await a.evaluate(()=>document.querySelector('[data-testid="fruitjuice-stop-button"]').remove());
   await a.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='verifying');
   await a.evaluate(()=>{
     const reply=document.createElement('article');reply.dataset.testid='conversation-turn-new';

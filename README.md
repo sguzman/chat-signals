@@ -8,7 +8,7 @@ A Firefox-first, cross-browser WebExtension for observing the **state of a ChatG
 
 - **State:** distinguish idle, generating, verifying, finished, interrupted, length-limited, failed, and unknown. Preserve observed evidence and uncertainty; never infer response completion from HTTP success or an absent Stop control alone.
 - **Identity:** derive a stable, scope-aware conversation key; use color-distance selection in OKLab among allocated open chats. Use a filled square for a normal chat and a circle for project chats. Colors represent identity, **not** response state.
-- **Display:** a small state emoji prefix on the tab title. Presentation consumes observation; it never feeds signals back to observation.
+- **Display:** a small state emoji prefix on the tab title. A narrowly bounded observer of the existing title element can restore an active emoji after ChatGPT overwrites the title; it never changes the observed response state.
 - **Later:** detailed state evidence and transitions, robust recovery, response alerts and audio, diagnostics export with strict privacy controls, and Viewsource-informed instrumentation.
 
 ## Documents

@@ -15,6 +15,8 @@ test('no self-observing head, tab sweep, network, transcript access or hot injec
  const content=fs.readFileSync('src/content.js','utf8');
  const worker=fs.readFileSync('src/background.js','utf8');
  assert.match(content,/observer\.observe\(main,/);
+ assert.match(content,/titleObserver\.observe\(node,\{childList:true,characterData:true,subtree:true\}\)/);
+ assert.match(content,/titleWriteCount>=12/);
  assert.doesNotMatch(content,/observer\.observe\(document\.(?:head|body)/);
  assert.doesNotMatch(content,/textContent.*(?:assistant|lastAssistant)/);
  assert.doesNotMatch(content,/fetch\(|XMLHttpRequest|localStorage|setInterval\(/);

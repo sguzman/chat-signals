@@ -9,9 +9,10 @@
   const tokens=new WeakMap();
   const originalFavicons=new Map();
   let tokenCount=0,current=null,currentHex=null,observer=null,observedMain=null,
-    queued=false,job=0,clickSettleJob=0,routeNonce=0,iconLink=null,previousState=-1,lastProbe=0;
-  const STOP='button[data-testid="stop-button"],button[aria-label="Stop generating"],button[aria-label="Stop response"]';
-  const ACTION='button[aria-label="Copy"],button[data-testid="copy-turn-action-button"],button[data-testid="copy-button"],[data-testid="turn-action-controls"] button';
+    queued=false,job=0,clickSettleJob=0,routeNonce=0,iconLink=null,previousState=-1,lastProbe=0,
+    titleObserver=null,watchedTitle=null,titleWriteCount=0,titleWriteWindow=0;
+  const STOP='button[data-testid="stop-button"],button[data-testid="fruitjuice-stop-button"],button[aria-label="Stop generating"],button[aria-label="Stop response"]';
+  const ACTION='button[aria-label="Copy" i],button[aria-label="Copy response" i],button[title="Copy" i],button[data-testid="copy-turn-action-button"],button[data-testid="copy-button"],[data-testid="turn-action-controls"] button,.turn-action-controls button';
   const EMOJI={idle:'',unknown:'❔',generating:'⏳',verifying:'🔎',
     interrupted:'🔌',failed:'⚠️',limit:'🛑',finished:'✅'};
   const strip=s=>String(s||'').replace(/^(?:(?:⏳|🔔|✅|🔌|⚠️|❌|🛑|🔎|❔)\s+)+/u,'');
@@ -112,20 +113,49 @@
     }
     if(iconLink.href!==png)iconLink.href=png;
   }
-  function publish(){
-    const r=tracker.snapshot();if(r.changed===previousState)return;
-    previousState=r.changed;
-    const root=document.documentElement;
-    root.dataset.chatSignalsState=r.phase;
-    root.dataset.chatSignalsRead=r.read;
-    root.dataset.chatSignalsReason=r.reason;
-    root.dataset.chatSignalsConfidence=r.confidence;
-    if(currentHex)root.dataset.chatSignalsColor=currentHex;
-    else delete root.dataset.chatSignalsColor;
+  // Only observe the existing <title> node, never document.head.
+  // A content-title write produces one callback which immediately exits once
+  // the desired prefix is present. The write budget bounds page/extension
+  // contention without creating a self-sustaining repair loop.
+  function stopWatchingTitle(){
+    titleObserver?.disconnect();titleObserver=null;watchedTitle=null;
+  }
+  function maintainTitle(){
+    const r=tracker.snapshot();
     const prefix=!current?'':r.phase==='finished'&&r.read==='unread'?'🔔':EMOJI[r.phase]||'';
-    const base=strip(document.title);
-    const title=(prefix?prefix+' ':'')+base;
-    if(document.title!==title)document.title=title;
+    if(!prefix){stopWatchingTitle();return;}
+    const node=document.head?.querySelector('title');
+    if(node!==watchedTitle){
+      stopWatchingTitle();
+      if(node){
+        watchedTitle=node;
+        titleObserver=new MutationObserver(maintainTitle);
+        titleObserver.observe(node,{childList:true,characterData:true,subtree:true});
+      }
+    }
+    const desired=prefix+' '+strip(document.title);
+    if(document.title===desired)return;
+    const now=performance.now();
+    if(now-titleWriteWindow>=60000){titleWriteWindow=now;titleWriteCount=0;}
+    if(titleWriteCount>=12)return; // fail quiet under pathological site churn
+    titleWriteCount++;
+    document.title=desired;
+  }
+  function publish(){
+    const r=tracker.snapshot();
+    if(r.changed!==previousState){
+      previousState=r.changed;
+      const root=document.documentElement;
+      root.dataset.chatSignalsState=r.phase;
+      root.dataset.chatSignalsRead=r.read;
+      root.dataset.chatSignalsReason=r.reason;
+      root.dataset.chatSignalsConfidence=r.confidence;
+      if(currentHex)root.dataset.chatSignalsColor=currentHex;
+      else delete root.dataset.chatSignalsColor;
+    }
+    // ChatGPT may rewrite its own title without changing the response state.
+    // Re-check the prefix independently of the evidence/state revision.
+    maintainTitle();
   }
   function allocate(){
     const identity=current,nonce=++routeNonce;
@@ -204,6 +234,9 @@
   function onVisible(){if(!document.hidden){tracker.viewed();publish();}schedule();}
   function dispose(){
     observer?.disconnect();observer=null;
+    stopWatchingTitle();
+    if(current && /^(?:⏳|🔔|✅|🔌|⚠️|🛑|🔎|❔)\\s+/u.test(document.title))
+      document.title=strip(document.title);
     if(job)clearTimeout(job);
     if(clickSettleJob)clearTimeout(clickSettleJob);
     document.removeEventListener('click',onClick,true);

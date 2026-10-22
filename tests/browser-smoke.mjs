@@ -38,14 +38,18 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
       'existing SVG/ICO favicon links must not outrank the allocated color');
     await page.evaluate(()=>{
       const button=document.createElement('button');
-      button.type='button';button.dataset.testid='stop-button';
+      button.type='button';button.dataset.testid='fruitjuice-stop-button';
       button.textContent='Stop';
       document.getElementById('composer').append(button);
     });
     await page.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='generating');
     assert.match(await page.title(),/^⏳ /u);
+    // React/site title rewrites must not permanently erase a live emoji.
+    await page.evaluate(()=>{document.title='Synthetic Chat';});
+    await page.waitForFunction(()=>document.title.startsWith('⏳ '));
+    assert.equal(await page.evaluate(()=>document.documentElement.dataset.chatSignalsState),'generating');
     await page.evaluate(()=>{
-      document.querySelector('[data-testid="stop-button"]').remove();
+      document.querySelector('[data-testid="fruitjuice-stop-button"]').remove();
     });
     await page.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='verifying');
     await page.evaluate(()=>{
@@ -60,6 +64,28 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
       confidence:document.documentElement.dataset.chatSignalsConfidence
     }));
     assert.match(end.title,/^✅ /u);
+    await page.evaluate(()=>{document.title='Synthetic Chat';});
+    await page.waitForFunction(()=>document.title.startsWith('✅ '));
+    // Bounded: even pathological repeated title rewrites cannot create an
+    // unbounded feedback loop or spur a new response state.
+    const writes=await page.evaluate(async()=>{
+      let repairs=0;
+      const observer=new MutationObserver(records=>{
+        for(const item of records)
+          if(item.target.textContent?.startsWith('✅ '))repairs++;
+      });
+      observer.observe(document.head.querySelector('title'),{subtree:true,childList:true,characterData:true});
+      for(let i=0;i<30;i++){
+        document.title='Synthetic Chat';
+        await Promise.resolve();
+        await Promise.resolve();
+      }
+      await new Promise(resolve=>setTimeout(resolve,200));
+      observer.disconnect();
+      return repairs;
+    });
+    assert.ok(writes<=12,'title recovery writes must have a strict per-minute cap');
+    assert.equal(await page.evaluate(()=>document.documentElement.dataset.chatSignalsState),'finished');
     assert.equal(end.confidence,'inferred');
     assert.equal(end.icon,initial.icon,'state must not change identity color');
     const snapshot=await page.evaluate(()=>{

@@ -8,7 +8,7 @@
 
 **Identity** maps scoped conversation URLs to a stable hashed key and selects a color from a defined OKLab candidate set, excluding currently allocated swatches when available. This dimension never depends on response state. A normal chat uses a square PNG favicon, a project chat a circular PNG. Color distance is approximate; extreme tab counts may exhaust the finite palette.
 
-**Presentation** updates only this tab's icon and title on meaningful state/route changes. Emoji prefixes represent state; current title text is otherwise preserved. No observing `document.head` to react to the extension's own changes. Focus changes can mark a verified completion as viewed, but cannot change response state.
+**Presentation** updates only this tab's icon and title on meaningful state/route changes. Emoji prefixes represent state; current title text is otherwise preserved. ChatGPT can independently overwrite the title after a response-state transition. Only while a state emoji is active, a narrowly targeted observer on the existing `<title>` element can repair its prefix: an equality check prevents self-triggering updates, and at most 12 title repairs per minute are allowed. The observer does **not** watch `document.head` or favicon changes and disconnects in idle/disposal. Focus can mark a verified completion viewed, not change response phase.
 
 ## Lifecycle boundaries
 
@@ -22,7 +22,7 @@ DOM observation is restricted to a bounded `main` subtree, ignores character dat
 
 - Color test vectors and pairwise distance checks; stability for the same conversation and multiple open chats.
 - State transition fixtures: generation, completion, cancellation, stale error, real interruption, length limit, background completion, new send after completion, incidental requests, route change.
-- Mutation loop test: thousands of harmless title/head changes do **not** trigger state observations or extension repair loops.
+- Mutation loop test: thousands of harmless head changes trigger no state observations; repeated title rewrites never trigger more than 12 title repairs per minute, do not change state, and cannot self-loop.
 - Synthetic multi-tab isolated Firefox/Chromium tests with no personal profiles.
 - Compare expected side effects: no tab reloads, no page navigation, no network telemetry, no repeated favicon writes or duplicate notifications.
 - On any defect, add the failed scenario **and a counterexample for the opposite extreme**, before changing inference thresholds.
