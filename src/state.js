@@ -3,20 +3,21 @@
   'use strict';
   const phases=new Set(['idle','generating','verifying','finished','interrupted','failed','limit','unknown']);
   function create(){
-    let key=null,phase='unknown',read='viewed',epoch=0,baselineAction=null,
+    let key=null,phase='unknown',read='viewed',epoch=0,baselineAction=null,baselineAssistant=null,
       baselineNotice=null,lastSample=null,reason='no-observation',changed=0,cancelPendingStop=false;
     const out=()=>Object.freeze({phase,read,epoch,reason,changed,
       confidence:phase==='unknown'||phase==='verifying'?'unknown':
         phase==='finished'?'inferred':'observed'});
     function reset(next){
       key=next;phase=next?'idle':'unknown';read='viewed';epoch=0;
-      baselineAction=null;baselineNotice=null;lastSample=null;cancelPendingStop=false;
+      baselineAction=null;baselineAssistant=null;baselineNotice=null;lastSample=null;cancelPendingStop=false;
       reason=next?'route-observed':'unrecognized-route';changed++;
       return out();
     }
     function begin(sample){
       cancelPendingStop=false;epoch++;phase='generating';read='viewed';
       baselineAction=sample.actionToken||null;
+      baselineAssistant=sample.assistantToken||null;
       baselineNotice=sample.noticeToken||null;
       reason='stop-visible';changed++;
     }
@@ -35,12 +36,12 @@
         phase='verifying';reason='stop-disappeared-unconfirmed';
       }
       const freshAction=Boolean(sample.actionToken)&&sample.actionToken!==baselineAction;
-      const replyFresh=Boolean(sample.assistantToken)&&(
-        !lastSample || sample.assistantToken!==lastSample.assistantToken ||
-        sample.assistantToken!==sample.startAssistantToken);
-      // Finishing requires a new terminal control from the active epoch.
+      const replyFresh=Boolean(sample.assistantToken)&&
+        sample.assistantToken!==baselineAssistant;
+      const freshActionOnStartedTurn=baselineAction===null&&freshAction;
+      // A replaced old Copy button alone is not a completed new response.
       if(!stop && (phase==='generating'||phase==='verifying'||phase==='interrupted') &&
-         freshAction && (replyFresh||sample.actionToken!==baselineAction)){
+         freshAction && (replyFresh||freshActionOnStartedTurn)){
         phase='finished';read=sample.hidden?'unread':'viewed';
         reason='fresh-assistant-terminal-action';
       }else if(sample.noticeKind==='limit'){

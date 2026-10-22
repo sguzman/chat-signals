@@ -72,3 +72,21 @@ test('separate failure and limit evidence; route change resets epoch',()=>{
  assert.equal(f.snapshot().phase,'idle');
  assert.equal(f.snapshot().epoch,0);
 });
+
+test('re-rendered old action cannot falsely complete a new reply',()=>{
+ const f=create();
+ f.observe(event());
+ f.observe(event({stop:true}));
+ f.observe(event({assistantToken:11,actionToken:99}));
+ assert.equal(f.snapshot().phase,'verifying');
+ // A truly new assistant turn with a new final control is sufficient.
+ f.observe(event({assistantToken:12,actionToken:100}));
+ assert.equal(f.snapshot().phase,'finished');
+});
+
+test('a final action newly appears on an assistant turn started without one',()=>{
+ const f=create();
+ f.observe(event({stop:true,assistantToken:12,actionToken:null}));
+ f.observe(event({stop:false,assistantToken:12,actionToken:22}));
+ assert.equal(f.snapshot().phase,'finished');
+});
