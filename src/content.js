@@ -53,14 +53,22 @@
     if(!last)return null;
     while(last.lastElementChild)last=last.lastElementChild;
     walker.currentNode=last;
+    const TURN='[data-testid^="conversation-turn"],[data-turn-key]';
+    let checkedTurn=null;
     for(let i=0;i<768;i++){
       node=walker.currentNode;
-      if(node?.matches?.(ASSISTANT)){
-        // ChatGPT may render terminal action controls beside an inner reply
-        // <article>, inside the encompassing conversation-turn wrapper.
-        // Prefer that wrapper; never search the whole page for Copy.
-        return node.closest('[data-testid^="conversation-turn"],[data-turn-key]')||
-          node.closest('article')||node;
+      // A formatted reply may contain thousands of descendants. Identify
+      // its enclosing turn from the trailing footer/action control rather
+      // than walking all the way back to the inner assistant marker.
+      const turn=node?.closest?.(TURN);
+      if(turn&&turn!==checkedTurn&&main.contains(turn)){
+        checkedTurn=turn;
+        if(turn.querySelector(ASSISTANT))return turn;
+        // A user-only turn is not an assistant. Skip its descendants.
+        walker.currentNode=turn;
+      }else if(node?.matches?.(ASSISTANT)){
+        // Some site versions have no identifiable outer turn wrapper.
+        return node.closest('article')||node;
       }
       if(!walker.previousNode())break;
     }
