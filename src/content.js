@@ -308,6 +308,9 @@
     document.title=desired;
   }
   function publish(){
+    // A visibility event can precede registration. Do not briefly overwrite
+    // the previous title with the reset-to-idle placeholder.
+    if(current&&!stateReady)return;
     const r=tracker.snapshot();
     if(r.changed!==previousState){
       previousState=r.changed;
