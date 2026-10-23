@@ -68,3 +68,7 @@ The current ChatGPT UI has an unlabeled, composer-scoped square Stop glyph (capt
 ## Input-stream failure (v0.3.8)
 
 The exact visible status `Error in input stream` is direct negative UI evidence for a response attempt, even when the error container has no alert role or test ID. A bounded leaf-element scan excludes assistant/user transcript bodies. When a fresh banner appears, `failed` overrides Copy-derived `finished` and clears unreadness; it may arrive after a premature completion inference. A banner present at the subsequent Retry baseline is stale and cannot fail that new attempt. Reloading a page with an explicit banner can display `failed` with response epoch zero, but cannot generate a new notification. Never classify an assistant quotation of these words as a live error, or infer errors from red styling.
+
+## Persistent interruption alert grace (v0.3.9)
+
+A direct UI observation of the exact connection-interruption banner still immediately enters `interrupted` and displays 🔌. The notification and chime are separate: they are deferred for five seconds, then delivered only when the same conversation and epoch still show an interruption and the visible notice remains present. If it recovers, completes or navigates elsewhere before confirmation, no warning is emitted and no warning deduplication slot is consumed; a subsequent persistent interruption in the same response epoch may warn once. Errors and limits remain immediate. This is a UX alert policy, not a claim that a short interruption did not actually happen.
