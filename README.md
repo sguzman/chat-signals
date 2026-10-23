@@ -27,8 +27,8 @@ Firefox Release requires a Mozilla-signed add-on. No listing in the public add-o
 
 1. Update local checkout of `main`: `git pull --ff-only`.
 2. From the repo root, package **only required extension files**, preserving directory paths:
-   `rm -f chat-signals-0.3.1.zip && zip -q -r chat-signals-0.3.1.zip manifest.json src icons`.
-   Verify the entries with `unzip -Z1 chat-signals-0.3.1.zip`: `manifest.json` must be at the archive root and JavaScript entries must retain their `src/` prefixes (including `src/background.js` and `src/content.js`). Do **not** use `python3 -m zipfile -c` for this archive: that command flattens supplied input paths, causing Mozilla validation to report missing scripts.
+   `bsdtar -a -cf chat-signals-0.3.2.zip manifest.json src icons`.
+   Verify the entries with `bsdtar -tf chat-signals-0.3.2.zip`: `manifest.json` must be at the archive root and JavaScript entries must retain their `src/` prefixes (including `src/background.js` and `src/content.js`). Do **not** use `python3 -m zipfile -c` for this archive: it flattens paths and causes missing-script errors. `bsdtar` is supplied by Arch's `libarchive` package and retains the `src/` directory.
 3. Sign into [Mozilla Add-ons Developer Hub](https://addons.mozilla.org/developers/) and submit a new add-on. Select **On your own** (unlisted / self-distribution), not **On this site**. Upload the generated ZIP and follow the validation/signing steps.
 4. When signing is complete, download the **signed XPI** from the add-on's version page in the Developer Hub. **Do not** rename the unsigned ZIP to XPI and expect Firefox Release to accept it.
 5. In the Firefox profile where Chat Signals will live, open `about:addons`, click the gear icon, select **Install Add-on From File**, select the signed XPI and accept permissions. Remove the temporary Chat Signals instance first if installing into the same spare profile.
