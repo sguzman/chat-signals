@@ -17,7 +17,8 @@
   let iconImage=null,faviconRepairWindow=0,faviconRepairCount=0,
     faviconObserver=null,faviconRepairJob=0,faviconRetryJob=0;
   let tokenCount=0,current=null,currentHex=null,observer=null,observedMain=null,
-    queued=false,job=0,fastQueued=false,disposed=false,clickSettleJob=0,intentExpiryJob=0,lastIntentAt=-1000,routeNonce=0,iconLink=null,previousState=-1,lastProbe=0,
+    queued=false,job=0,fastQueued=false,disposed=false,stateReady=true,
+    lastSavedState=-1,clickSettleJob=0,intentExpiryJob=0,lastIntentAt=-1000,routeNonce=0,iconLink=null,previousState=-1,lastProbe=0,
     titleObserver=null,watchedTitle=null,titleWriteCount=0,titleWriteWindow=0;
   // Oct 2026 ChatGPT composer variant renders Stop as an unlabeled button
   // carrying this square path (distinct from voice/Send). Require the exact
@@ -318,6 +319,18 @@
       if(currentHex)root.dataset.chatSignalsColor=currentHex;
       else delete root.dataset.chatSignalsColor;
     }
+    // Save only state transitions, not streaming text or transcript content.
+    // Do not overwrite a prior snapshot with the initial idle placeholder
+    // before the registration response has restored it.
+    if(current&&stateReady&&r.changed!==lastSavedState){
+      lastSavedState=r.changed;
+      if(globalThis.chrome?.runtime?.sendMessage){
+        try{chrome.runtime.sendMessage({type:'chat-signals-state',
+          key:color.hash(current.key),documentToken,
+          state:{phase:r.phase,read:r.read,epoch:r.epoch}},
+          ()=>void chrome.runtime.lastError);}catch{/* local state remains valid */}
+      }
+    }
     // ChatGPT may rewrite its own title without changing the response state.
     // Re-check the prefix independently of the evidence/state revision.
     maintainTitle();
@@ -332,19 +345,30 @@
       currentHex=hex;paintIdentity();
       document.documentElement.dataset.chatSignalsColor=hex;
     };
+    function ready(saved){
+      if(stateReady||nonce!==routeNonce||current?.key!==identity.key||disposed)return;
+      stateReady=true;
+      const live=sample();
+      // Fresh on-page Stop or explicit error is stronger than a previous
+      // session snapshot. It will be read by the immediate reconciliation.
+      if(saved&&!live.stop&&!live.noticeKind)tracker.restore(saved,live);
+      if(!document.hidden)tracker.viewed();
+      reconcile();
+    }
     // Do not paint a provisional hash swatch first: the background allocator
     // may return a different, persisted color and cause a visible color jump.
     // A deterministic fallback is used only if background registration fails.
     if(!globalThis.chrome?.runtime?.sendMessage){
-      applyHex(color.choose(key));return;
+      applyHex(color.choose(key));ready(null);return;
     }
     try{chrome.runtime.sendMessage({type:'chat-signals-register',
       key,documentToken},answer=>{
-      if(nonce!==routeNonce||current?.key!==identity.key)return;
+      if(nonce!==routeNonce||current?.key!==identity.key||disposed)return;
       if(/^#[0-9a-f]{6}$/.test(answer?.hex||''))
         applyHex(answer.hex);
       else applyHex(color.choose(key));
-    });}catch{applyHex(color.choose(key));}
+      ready(answer?.restored);
+    });}catch{applyHex(color.choose(key));ready(null);}
   }
   const STRUCTURAL=ASSISTANT+','+
     '[data-testid^="conversation-turn"],'+STOP+','+SEND+','+ACTION+','+
@@ -523,12 +547,15 @@
       cancelInterruptionGrace();
       current=next;currentHex=null;
       eventAlerts?.reset(next?.key||null);
-      previousState=-1;tracker.reset(next?.key||null);
+      previousState=-1;lastSavedState=-1;
+      stateReady=!next;
+      tracker.reset(next?.key||null);
       if(!next){++routeNonce;paintIdentity();}
       else allocate();
     }
     bindMain(document.querySelector('main'));
     if(!current){publish();return;}
+    if(!stateReady)return; // no idle flicker or storage overwrite on reload
     const previous=tracker.snapshot();
     tracker.observe(sample());
     emitEvent(previous,tracker.snapshot());
@@ -545,6 +572,9 @@
     const now=performance.now();
     if(now-lastIntentAt<350)return;
     lastIntentAt=now;
+    // A fresh user submission supersedes an older snapshot even when the
+    // background registration has not answered yet.
+    stateReady=true;
     // Run in the user's Send gesture; Firefox requires prior activation
     // before background Web Audio may be permitted.
     if(globalThis.ChatSignalsChime?.unlock)
