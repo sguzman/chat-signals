@@ -75,7 +75,12 @@
       const terminalAfterStop=freshAction&&
         reason==='stop-disappeared-unconfirmed'&&
         (freshReply||(baselineAction===null&&priorActionAbsent));
-      if(!stop&&!replyJustStarted&&!sample.noticeKind&&
+      // A warning already present at the submission baseline is stale.
+      // Only a fresh relevant notice may veto terminal completion evidence.
+      const activeNotice=Boolean(sample.noticeKind)&&
+        (sample.noticeToken!==baselineNotice||
+         sample.noticeKind==='limit'||sample.noticeKind==='conversation_load_failed');
+      if(!stop&&!replyJustStarted&&!activeNotice&&
          (phase==='submitted'||phase==='generating'||phase==='verifying'||phase==='interrupted') &&
          (newTerminalAfterReply||terminalAfterStop)){
         phase='finished';read=sample.hidden?'unread':'viewed';

@@ -185,7 +185,7 @@ test('clicking a completion notification activates the original tab then focuses
  await w.register(51,key);
  await w.event(51,key,'completion');
  await w.click('chat-signals-tab-51');
- assert.deepEqual(w.activations(),[
+ assert.deepEqual(JSON.parse(JSON.stringify(w.activations())),[
    {kind:'tab',id:51,options:{active:true}},
    {kind:'window',id:7,options:{focused:true}}
  ]);
