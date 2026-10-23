@@ -54,21 +54,53 @@
     }
     return null;
   }
+  const CONNECTION_INTERRUPTED=
+    /^connection interrupted[.!]? waiting for the complete answer[.!]?$/i;
+  const STATUS_SELECTOR='[role="alert"],[role="status"],'+
+    '[data-testid="conversation-error"],[data-testid="toast"]';
+  function classifyNotice(text){
+    const normalized=String(text||'').trim().toLowerCase().replace(/\s+/g,' ');
+    if(/(?:maximum (?:conversation )?length|conversation is too long|reached its limit)/.test(normalized))
+      return 'limit';
+    if(/(?:could not load this chatgpt conversation|couldn't load this conversation)/.test(normalized))
+      return 'conversation_load_failed';
+    if(/(?:this response couldn.t load)/.test(normalized))return 'response_load_failed';
+    if(CONNECTION_INTERRUPTED.test(normalized))return 'interrupted';
+    if(/^(?:network error|something went wrong|message delivery timed out|failed to generate response)[.!]?$/.test(normalized))
+      return 'error';
+    return null;
+  }
+  function safeBanner(node){
+    return node?.nodeType===1&&node.isConnected&&
+      !node.closest('[data-message-author-role],.markdown,.prose,[contenteditable="true"]')&&
+      !node.closest('#prompt-textarea,[data-testid="prompt-textarea"]')&&
+      node.childElementCount<=1;
+  }
   function visibleNotice(){
-    const nodes=document.querySelectorAll('[role="alert"],[data-testid="conversation-error"],[data-testid="toast"]');
+    const nodes=document.querySelectorAll(STATUS_SELECTOR);
     for(let i=0;i<Math.min(nodes.length,24);i++){
       const node=nodes[i];
       if(!present(node)||node.closest('[data-message-author-role]'))continue;
-      // Only short diagnostic status elements, not any response/transcript text.
       if(node.textContent.length>180)continue;
-      const text=node.textContent.trim().toLowerCase().replace(/\s+/g,' ');
-      let kind=null;
-      if(/(?:maximum (?:conversation )?length|conversation is too long|reached its limit)/.test(text))kind='limit';
-      else if(/(?:could not load this chatgpt conversation|couldn't load this conversation)/.test(text))kind='conversation_load_failed';
-      else if(/(?:this response couldn.t load)/.test(text))kind='response_load_failed';
-      else if(/connection interrupted.*waiting for the complete answer/.test(text))kind='interrupted';
-      else if(/^(?:network error|something went wrong|message delivery timed out|failed to generate response)[.!]?$/i.test(text))kind='error';
+      const kind=classifyNotice(node.textContent);
       if(kind)return {kind,id:token(node)};
+    }
+    // The connection interruption banner may have no alert role or test id.
+    // Inspect a bounded set of small leaf-like elements, never message bodies,
+    // matching *only* the exact known status phrase. No text is persisted.
+    const main=document.querySelector('main');
+    if(!main)return null;
+    const items=main.querySelectorAll('div,span,p');
+    let inspected=0;
+    for(let i=items.length-1;i>=0&&inspected<900;i--){
+      const el=items[i];
+      if(!safeBanner(el))continue;
+      inspected++;
+      if(!present(el))continue;
+      const length=el.textContent.length;
+      if(length<45||length>100)continue;
+      if(CONNECTION_INTERRUPTED.test(el.textContent.trim().replace(/\s+/g,' ')))
+        return {kind:'interrupted',id:token(el)};
     }
     return null;
   }
@@ -215,7 +247,7 @@
   }
   const STRUCTURAL=ASSISTANT+','+
     '[data-testid^="conversation-turn"],'+STOP+','+SEND+','+ACTION+','+
-    '[role="alert"],[data-testid="conversation-error"],[data-testid="toast"]';
+    STATUS_SELECTOR;
   function relevantChanges(records){
     // Streaming text children have no structural evidence. Inspect at most
     // 64 inserted/removed roots and 80 descendants per nontrivial root.
@@ -224,13 +256,24 @@
       for(const nodes of [record.addedNodes,record.removedNodes]){
         for(const node of nodes){
           if(++examined>64)return true; // uncertain batch: one coalesced check
+          if(node.nodeType===3){
+            // Detect a status inserted as plain text without scanning
+            // arbitrary streamed response text.
+            if(safeBanner(node.parentElement)&&
+               CONNECTION_INTERRUPTED.test(node.textContent.trim()))return true;
+            continue;
+          }
           if(node.nodeType!==1)continue;
+          if(safeBanner(node)&&node.textContent.length<=100&&
+             CONNECTION_INTERRUPTED.test(node.textContent.trim()))return true;
           if(node.matches?.(STRUCTURAL))return true;
           if(!node.firstElementChild)continue;
           const walker=document.createTreeWalker(node,NodeFilter.SHOW_ELEMENT);
           let count=0,child;
           while((child=walker.nextNode())){
             if(++count>80)return true; // do not traverse huge inserted subtrees
+            if(safeBanner(child)&&child.textContent.length<=100&&
+               CONNECTION_INTERRUPTED.test(child.textContent.trim()))return true;
             if(child.matches?.(STRUCTURAL))return true;
           }
         }
@@ -243,7 +286,11 @@
     observer?.disconnect();observer=null;observedMain=main;
     if(!main)return;
     observer=new MutationObserver(records=>{
-      if(relevantChanges(records))schedule();
+      // A plain-text interruption banner has no semantic selector. A removal
+      // must be observed too, so recovered streams can leave 🔌 promptly.
+      if((tracker.snapshot().phase==='interrupted'&&
+          records.some(record=>record.removedNodes.length>0))||
+         relevantChanges(records))schedule();
     });
     observer.observe(main,{subtree:true,childList:true});
   }

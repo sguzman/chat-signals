@@ -194,3 +194,26 @@ test('uncertainty after lag cannot immediately turn into success as output start
  f.observe(event({assistantToken:12,actionToken:22}));
  assert.equal(f.snapshot().phase,'generating');
 });
+
+test('a visible interruption outranks a new completion toolbar, then recovers',()=>{
+ const f=create();f.observe(event());f.intent(event());
+ f.observe(event({assistantToken:12,actionToken:null}));
+ const interrupt=event({assistantToken:12,actionToken:22,noticeKind:'interrupted',noticeToken:42});
+ f.observe(interrupt);
+ assert.equal(f.snapshot().phase,'interrupted');
+ assert.equal(f.snapshot().reason,'current-interruption');
+ // The first completed-control observation while the banner is present
+ // cannot override the explicit interruption.
+ f.observe(interrupt);
+ assert.equal(f.snapshot().phase,'interrupted');
+ f.observe(event({assistantToken:12,actionToken:22}));
+ assert.equal(f.snapshot().phase,'verifying',
+   'banner disappearance alone does not prove the reply completed');
+});
+test('an interrupted response can resume generation when Stop returns',()=>{
+ const f=create();f.observe(event());f.intent(event());
+ f.observe(event({noticeKind:'interrupted',noticeToken:52}));
+ assert.equal(f.snapshot().phase,'interrupted');
+ f.observe(event({noticeKind:null,stop:true}));
+ assert.equal(f.snapshot().phase,'generating');
+});

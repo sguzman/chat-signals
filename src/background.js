@@ -92,6 +92,27 @@
     }
     return false;
   });
+  // A notification click is an explicit request to return to that exact
+  // conversation tab. Merely activating a tab does not focus its window.
+  // Keep both operations scoped to the existing tab; never open another.
+  chrome.notifications?.onClicked?.addListener(notificationId=>{
+    const match=/^chat-signals-tab-(\d+)$/.exec(notificationId);
+    if(!match)return;
+    const tabId=Number(match[1]);
+    if(!Number.isSafeInteger(tabId))return;
+    serialize(async()=>{
+      const slots=await get();
+      if(!slots[String(tabId)])return;
+      if(!chrome.tabs?.get||!chrome.tabs?.update||!chrome.windows?.update)return;
+      chrome.tabs.get(tabId,tab=>{
+        if(chrome.runtime.lastError||!tab||!Number.isInteger(tab.windowId))return;
+        chrome.tabs.update(tabId,{active:true},()=>{
+          if(chrome.runtime.lastError)return;
+          chrome.windows.update(tab.windowId,{focused:true},()=>void chrome.runtime.lastError);
+        });
+      });
+    }).catch(()=>{});
+  });
   chrome.tabs.onRemoved.addListener(tabId=>{
     serialize(async()=>{
       const slots=await get();

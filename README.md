@@ -27,8 +27,8 @@ Firefox Release requires a Mozilla-signed add-on. No listing in the public add-o
 
 1. Update local checkout of `main`: `git pull --ff-only`.
 2. From the repo root, package **only required extension files**, preserving directory paths:
-   `bsdtar -a -cf chat-signals-0.3.2.zip manifest.json src icons`.
-   Verify the entries with `bsdtar -tf chat-signals-0.3.2.zip`: `manifest.json` must be at the archive root and JavaScript entries must retain their `src/` prefixes (including `src/background.js` and `src/content.js`). Do **not** use `python3 -m zipfile -c` for this archive: it flattens paths and causes missing-script errors. `bsdtar` is supplied by Arch's `libarchive` package and retains the `src/` directory.
+   `bsdtar -a -cf chat-signals-0.3.3.zip manifest.json src icons`.
+   Verify the entries with `bsdtar -tf chat-signals-0.3.3.zip`: `manifest.json` must be at the archive root and JavaScript entries must retain their `src/` prefixes (including `src/background.js` and `src/content.js`). Do **not** use `python3 -m zipfile -c` for this archive: it flattens paths and causes missing-script errors. `bsdtar` is supplied by Arch's `libarchive` package and retains the `src/` directory.
 3. Sign into [Mozilla Add-ons Developer Hub](https://addons.mozilla.org/developers/) and submit a new add-on. Select **On your own** (unlisted / self-distribution), not **On this site**. Upload the generated ZIP and follow the validation/signing steps.
 4. When signing is complete, download the **signed XPI** from the add-on's version page in the Developer Hub. **Do not** rename the unsigned ZIP to XPI and expect Firefox Release to accept it.
 5. In the Firefox profile where Chat Signals will live, open `about:addons`, click the gear icon, select **Install Add-on From File**, select the signed XPI and accept permissions. Remove the temporary Chat Signals instance first if installing into the same spare profile.
@@ -75,3 +75,12 @@ This repository starts with **independent MIT-licensed code**. The historical ex
 No real ChatGPT profile, conversation text, cookies, authentication, screenshots or private captures are committed, logged, transmitted or used as fixtures. Synthetic tests are not a claim of live-site compatibility.
 
 Develop directly on `main`. Do not bulk-inject into existing tabs or refresh them during upgrades. An ordinary install may require Firefox extension signing; unpacked/temporary testing is separate from a signed release.
+
+
+### v0.3.3 — Firefox Developer Edition hardening
+
+- A *visible, exact* "Connection interrupted. Waiting for the complete answer" banner is recognized as 🔌 even when ChatGPT renders it as a plain div without an alert role. Detection remains bounded and excludes assistant message bodies. When the banner disappears, Chat Signals enters 🔎 verifying unless the reply resumes with observable generation evidence; recovery alone is not completion.
+- Completion cannot override an outstanding interruption banner. Repeated appearances of the same interruption during one response epoch do not produce repeated alerts.
+- Chime gain increased by about 7 dB, maintaining the same short motifs and per-event deduplication. Actual audibility still depends on the browser's audio policy and the system audio output.
+- Clicking a Chat Signals desktop notification now selects the **existing source tab** and asks Firefox to focus its **existing window**, without opening another tab or navigating to a private URL. On Hyprland, the `config-store` `machine/eosbox` focus rule additionally needs to match the `firefox-developer-edition` class. Window managers may apply their own focus policies.
+- No change to the conversation color allocator, favicon rendering or data collection permissions.

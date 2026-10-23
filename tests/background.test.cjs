@@ -5,15 +5,29 @@ const fs=require('node:fs');
 const color=require('../src/color.js');
 
 function start(){
-  let message,removed,session={},notifications=[];
+  let message,removed,clicked,session={},notifications=[],activations=[];
+  let tabWindows=new Map();
   const nonce='0123456789abcdef0123456789abcdef';
   const chrome={
     runtime:{lastError:null,getURL:p=>'moz-extension://synthetic/'+p,
       onMessage:{addListener:fn=>{message=fn;}}},
-    tabs:{onRemoved:{addListener:fn=>{removed=fn;}}},
-    notifications:{create:(id,options,cb)=>{
-      notifications.push({id,options});cb(id);
+    tabs:{
+      onRemoved:{addListener:fn=>{removed=fn;}},
+      get:(id,callback)=>callback(tabWindows.has(id)?
+        {id,windowId:tabWindows.get(id)}:undefined),
+      update:(id,options,callback)=>{
+        activations.push({kind:'tab',id,options});callback();
+      }
+    },
+    windows:{update:(id,options,callback)=>{
+      activations.push({kind:'window',id,options});callback();
     }},
+    notifications:{
+      onClicked:{addListener:fn=>{clicked=fn;}},
+      create:(id,options,cb)=>{
+        notifications.push({id,options});cb(id);
+      }
+    },
     storage:{session:{
       get:(_key,callback)=>callback({...session}),
       set:(value,callback)=>{session={...session,...value};callback();}
@@ -35,7 +49,10 @@ function start(){
   const event=(id,key,kind,epoch=1,documentToken=nonce,origin,iconUrl)=>send(id,{
     type:'chat-signals-event',event:kind,key,epoch,documentToken,iconUrl},origin);
   return {register,complete,event,remove:id=>removed(id),read:()=>session,
-    notifications:()=>notifications};
+    notifications:()=>notifications,
+    setWindow:(tabId,windowId)=>tabWindows.set(tabId,windowId),
+    click:async id=>{clicked(id);await new Promise(resolve=>setImmediate(resolve));},
+    activations:()=>activations};
 }
 
 test('register assigns different OKLab colors to separate live chats',async()=>{
@@ -160,4 +177,27 @@ test('re-registering same document preserves alert ledger, replacing document cl
  assert.equal((await w.event(48,key,'interruption',1)).created,false);
  await w.register(48,key,'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
  assert.equal((await w.event(48,key,'interruption',1,'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')).created,true);
+});
+
+test('clicking a completion notification activates the original tab then focuses its window',async()=>{
+ const w=start(),key=color.hash('chat:synthetic-only');
+ w.setWindow(51,7);
+ await w.register(51,key);
+ await w.event(51,key,'completion');
+ await w.click('chat-signals-tab-51');
+ assert.deepEqual(w.activations(),[
+   {kind:'tab',id:51,options:{active:true}},
+   {kind:'window',id:7,options:{focused:true}}
+ ]);
+});
+test('notification click ignores unknown, removed, or nonextension notifications',async()=>{
+ const w=start(),key=color.hash('chat:synthetic-only');
+ w.setWindow(52,8);await w.register(52,key);
+ for(const id of ['other-notification','chat-signals-tab-52-extra','chat-signals-tab-9999']){
+   await w.click(id);
+ }
+ assert.equal(w.activations().length,0);
+ w.remove(52);await w.register(53,color.hash('chat:synthetic-extra'));
+ await w.click('chat-signals-tab-52');
+ assert.equal(w.activations().length,0);
 });

@@ -322,6 +322,53 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
           [expectedSound],'no duplicate alert from incidental DOM mutation');
       }finally{await diagnostic.close();}
     }
+    // The live ChatGPT interruption banner can be an ordinary div, without
+    // role=alert or a test id. Appearance, reappearance, and recovery must
+    // all be observable, with a single warning sound per attempt.
+    const banner=await context.newPage();
+    try{
+      await banner.route('https://chatgpt.com/**',route=>route.fulfill({
+        contentType:'text/html',body:html,status:200
+      }));
+      await banner.goto('https://chatgpt.com/c/synthetic-interruption-banner');
+      for(const script of scripts)await banner.addScriptTag({content:script});
+      await banner.evaluate(()=>{
+        window.__sounds=[];
+        window.ChatSignalsChime={
+          unlock:async()=> 'ready',
+          play:async kind=>{window.__sounds.push(kind);return 'scheduled';}
+        };
+      });
+      await banner.waitForFunction(()=>
+        document.documentElement.dataset.chatSignalsState==='idle');
+      await banner.evaluate(()=>{
+        document.querySelector('#prompt-textarea').dispatchEvent(
+          new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
+        const el=document.createElement('div');
+        el.id='plain-connection-banner';
+        el.textContent='Connection interrupted. Waiting for the complete answer';
+        document.querySelector('main').append(el);
+      });
+      await banner.waitForFunction(()=>
+        document.documentElement.dataset.chatSignalsState==='interrupted');
+      assert.match(await banner.title(),/^🔌 /u);
+      assert.deepEqual(await banner.evaluate(()=>window.__sounds),['warning']);
+      await banner.evaluate(()=>
+        document.querySelector('#plain-connection-banner').remove());
+      await banner.waitForFunction(()=>
+        document.documentElement.dataset.chatSignalsState==='verifying');
+      assert.equal(await banner.evaluate(()=>window.__sounds.length),1,
+        'recovery cannot play a second alert');
+      await banner.evaluate(()=>{
+        const el=document.createElement('div');el.id='plain-connection-banner';
+        el.textContent='Connection interrupted. Waiting for the complete answer';
+        document.querySelector('main').append(el);
+      });
+      await banner.waitForFunction(()=>
+        document.documentElement.dataset.chatSignalsState==='interrupted');
+      assert.deepEqual(await banner.evaluate(()=>window.__sounds),['warning'],
+        'same-epoch repeat interruption must not chime again');
+    }finally{await banner.close();}
     console.log('PASS '+name+': confirmed completion, 🔔->✅ silence, and one-shot warning/error/limit cues');
   }finally{
     await context.close();await browser.close();

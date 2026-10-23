@@ -78,3 +78,16 @@ test('neutral states never play sound, even if audio is ready',async()=>{
  }
  assert.equal(s.calls.length,0);
 });
+
+test('increased chime gain is measurable and bounded below clipping',async()=>{
+ for(const [kind,expected] of [['success',0.18],['warning',0.14],
+                              ['error',0.10],['limit',0.14]]){
+   const s=start(true);
+   assert.equal(await s.api.play(kind),'scheduled');
+   const peaks=s.calls.filter(([op])=>op==='ramp').map(([,value])=>value);
+   assert.equal(peaks.filter(value=>value===expected).length,
+     s.api.MOTIFS[kind].length,'every tone has expected peak gain');
+   assert.ok(expected*s.api.MOTIFS[kind].length<0.6,
+     'even simultaneous tones must remain comfortably below full scale');
+ }
+});

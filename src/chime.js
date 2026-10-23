@@ -28,7 +28,9 @@
     if(result!=='ready'||Date.now()-requested>750)return 'blocked';
     try{
       const start=ctx.currentTime+0.015;
-      const peak=kind==='success'?0.075:kind==='error'?0.042:0.055;
+      // +~7 dB vs the earlier cues. Peaks remain below full scale even
+      // for the two simultaneous error tones; no global mixer changes.
+      const peak=kind==='success'?0.18:kind==='error'?0.10:0.14;
       for(const [hz,offset,duration] of motif){
         const begin=start+offset,osc=ctx.createOscillator(),gain=ctx.createGain();
         osc.type='sine';osc.frequency.value=hz;
