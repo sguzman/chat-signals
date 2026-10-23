@@ -314,17 +314,26 @@
   function allocate(){
     const identity=current,nonce=++routeNonce;
     if(!identity)return;
-    currentHex=color.choose(color.hash(identity.key));paintIdentity();publish();
-    if(!globalThis.chrome?.runtime?.sendMessage)return;
-    try{chrome.runtime.sendMessage({type:'chat-signals-register',
-      key:color.hash(identity.key),documentToken},answer=>{
+    const key=color.hash(identity.key);
+    const applyHex=hex=>{
       if(nonce!==routeNonce||current?.key!==identity.key)return;
-      if(!/^#[0-9a-f]{6}$/.test(answer?.hex||''))return;
-      if(currentHex!==answer.hex){
-        currentHex=answer.hex;paintIdentity();
-        document.documentElement.dataset.chatSignalsColor=answer.hex;
-      }
-    });}catch{/* identity fallback is still deterministic */}
+      if(currentHex===hex)return;
+      currentHex=hex;paintIdentity();
+      document.documentElement.dataset.chatSignalsColor=hex;
+    };
+    // Do not paint a provisional hash swatch first: the background allocator
+    // may return a different, persisted color and cause a visible color jump.
+    // A deterministic fallback is used only if background registration fails.
+    if(!globalThis.chrome?.runtime?.sendMessage){
+      applyHex(color.choose(key));return;
+    }
+    try{chrome.runtime.sendMessage({type:'chat-signals-register',
+      key,documentToken},answer=>{
+      if(nonce!==routeNonce||current?.key!==identity.key)return;
+      if(/^#[0-9a-f]{6}$/.test(answer?.hex||''))
+        applyHex(answer.hex);
+      else applyHex(color.choose(key));
+    });}catch{applyHex(color.choose(key));}
   }
   const STRUCTURAL=ASSISTANT+','+
     '[data-testid^="conversation-turn"],'+STOP+','+SEND+','+ACTION+','+
