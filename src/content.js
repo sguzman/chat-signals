@@ -11,7 +11,8 @@
   const documentToken=crypto.randomUUID().replace(/-/g,'');
   const tokens=new WeakMap();
   const originalFavicons=new Map();
-  let iconImage=null,faviconRepairWindow=0,faviconRepairCount=0;
+  let iconImage=null,faviconRepairWindow=0,faviconRepairCount=0,
+    faviconObserver=null,faviconRepairJob=0,faviconRetryJob=0;
   let tokenCount=0,current=null,currentHex=null,observer=null,observedMain=null,
     queued=false,job=0,clickSettleJob=0,intentExpiryJob=0,lastIntentAt=-1000,routeNonce=0,iconLink=null,previousState=-1,lastProbe=0,
     titleObserver=null,watchedTitle=null,titleWriteCount=0,titleWriteWindow=0;
@@ -187,10 +188,39 @@
     }
     if(iconLink.href!==png)iconLink.href=png;
   }
-  // Detect drift only when the existing response/title lifecycle is already
-  // running. No observer on document.head or favicon links, no new timer.
-  // The alert icon is generated independently, so a colored notification does
-  // not guarantee that ChatGPT's current favicon links still match it.
+  // ChatGPT can replace favicon links without touching the conversation
+  // title or response state. Repair that independent presentation channel.
+  // Observe only head link changes; never inspect page text or response DOM.
+  function onFaviconMutation(records){
+    if(!current||!iconImage)return;
+    const iconLinkChanged=node=>node?.nodeType===1&&(
+      (node.localName==='link'&&
+        (node.relList?.contains('icon')||node===iconLink||
+         originalFavicons.has(node)))||
+      Boolean(node.querySelector?.('link[rel~="icon"]')));
+    for(const record of records){
+      if(record.type==='attributes'){
+        if(!iconLinkChanged(record.target))continue;
+      }else if(![...record.addedNodes,...record.removedNodes].some(iconLinkChanged)){
+        continue;
+      }
+      if(faviconRepairJob)return;
+      faviconRepairJob=setTimeout(()=>{
+        faviconRepairJob=0;maintainFavicon();
+      },100); // coalesce a batch of site favicon changes
+      return;
+    }
+  }
+  function watchFavicons(){
+    if(faviconObserver||!document.head)return;
+    faviconObserver=new MutationObserver(onFaviconMutation);
+    faviconObserver.observe(document.head,{
+      attributes:true,attributeFilter:['href','rel','type','sizes'],
+      childList:true,subtree:true
+    });
+  }
+  // The alert icon is generated independently, so a colored notification
+  // does not guarantee that ChatGPT's current tab favicon still matches it.
   function maintainFavicon(){
     if(!current||!currentHex||!iconImage)return;
     const links=document.querySelectorAll('link[rel~="icon"]');
@@ -206,7 +236,14 @@
     if(now-faviconRepairWindow>=60000){
       faviconRepairWindow=now;faviconRepairCount=0;
     }
-    if(faviconRepairCount>=12)return; // bounded response to competing writers
+    if(faviconRepairCount>=12){
+      // A very active site can exhaust the repair budget. Retry once the
+      // minute rolls over instead of leaving this tab uncolored indefinitely.
+      if(!faviconRetryJob)faviconRetryJob=setTimeout(()=>{
+        faviconRetryJob=0;maintainFavicon();
+      },Math.max(100,60000-(now-faviconRepairWindow)));
+      return;
+    }
     faviconRepairCount++;
     paintIdentity();
   }
@@ -403,6 +440,10 @@
   function onVisible(){if(!document.hidden){tracker.viewed();publish();}schedule();}
   function dispose(){
     observer?.disconnect();observer=null;
+    faviconObserver?.disconnect();faviconObserver=null;
+    if(faviconRepairJob)clearTimeout(faviconRepairJob);
+    if(faviconRetryJob)clearTimeout(faviconRetryJob);
+    faviconRepairJob=0;faviconRetryJob=0;
     stopWatchingTitle();
     if(current && /^(?:⚪|📤|⏳|🔔|✅|🔌|⚠️|🛑|🔎|❔)\\s+/u.test(document.title))
       document.title=strip(document.title);
@@ -419,6 +460,7 @@
     restoreFavicons();
     if(globalThis.__chatSignalsOwner===owner)delete globalThis.__chatSignalsOwner;
   }
+  watchFavicons();
   document.addEventListener('submit',onSubmit,true);
   document.addEventListener('keydown',onKeydown,true);
   document.addEventListener('click',onClick,true);

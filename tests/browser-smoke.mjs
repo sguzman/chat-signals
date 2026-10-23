@@ -43,9 +43,8 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
     assert.equal(faviconCandidates.length,2);
     assert.ok(faviconCandidates.every(x=>x.png&&x.type==='image/png'&&x.sizes===null),
       'existing SVG/ICO favicon links must not outrank the allocated color');
-    // After initial hydration, ChatGPT can replace an old favicon URL or
-    // append a new candidate. A normal title update should repair that drift
-    // without new head observers, polling, or response-state changes.
+    // Regression: the site changes favicon links with NO title, response or
+    // focus change. The independent icon observer must repair both changes.
     await page.evaluate(()=>{
       const old=document.querySelector('link[rel~="icon"]:not([data-chat-signals-icon])');
       old.setAttribute('href','/site-icon-overwrite.ico');
@@ -54,7 +53,6 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
       added.href='/site-late-favicon.svg';added.type='image/svg+xml';
       added.dataset.syntheticLateIcon='1';
       document.head.append(added);
-      document.title='Synthetic Chat Renamed';
     });
     await page.waitForFunction(()=>{
       const candidates=[...document.querySelectorAll('link[rel~="icon"]')];
@@ -66,7 +64,10 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
     });
     assert.equal(await page.evaluate(()=>document.documentElement.dataset.chatSignalsState),
       'idle','favicon correction must not alter response state');
-    assert.equal(await page.title(),'⚪ Synthetic Chat Renamed');
+    assert.equal(await page.title(),'⚪ Synthetic Chat',
+      'favicon-only site changes must not cause a title rewrite');
+    await page.evaluate(()=>{document.title='Synthetic Chat Renamed';});
+    await page.waitForFunction(()=>document.title==='⚪ Synthetic Chat Renamed');
     // Neither an unrelated Enter nor Shift+Enter counts as submission.
     const blocked=await page.evaluate(()=>{
       const el=document.querySelector('#prompt-textarea');
@@ -154,6 +155,30 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
     assert.equal(await page.evaluate(()=>document.documentElement.dataset.chatSignalsState),'finished');
     assert.equal(end.confidence,'inferred');
     assert.equal(end.icon,initial.icon,'state must not change identity color');
+    // Reproduce the reported inverse: status is correct but the site resets
+    // the favicon later, without touching the title or response structure.
+    const titleBeforeIconDrift=await page.title();
+    await page.evaluate(()=>{
+      const late=document.querySelector('[data-synthetic-late-icon]');
+      late.href='/late-site-reset.ico';
+      late.type='image/x-icon';
+      const replacement=document.createElement('link');
+      replacement.rel='icon';replacement.href='/new-site-icon.ico';
+      replacement.dataset.postCompletionIcon='1';
+      document.head.append(replacement);
+    });
+    await page.waitForFunction(()=>{
+      const expected=document.querySelector('[data-chat-signals-icon]')?.getAttribute('href');
+      return [...document.querySelectorAll('link[rel~="icon"]')]
+        .every(link=>link.getAttribute('href')===expected&&
+          link.getAttribute('type')==='image/png'&&!link.hasAttribute('sizes'));
+    });
+    assert.equal(await page.title(),titleBeforeIconDrift,
+      'favicon repair must not alter the current title');
+    assert.equal(await page.evaluate(()=>document.documentElement.dataset.chatSignalsState),
+      'finished','favicon repair must not change response state');
+    assert.equal(await page.evaluate(()=>window.__completionChimes),1,
+      'favicon repair must not replay completion alerts');
     const snapshot=await page.evaluate(()=>{
       for(let i=0;i<1000;i++){
         const m=document.createElement('meta');m.name='synthetic-'+i;
@@ -192,7 +217,8 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
       {href:'/synthetic-icon-b.svg',type:'image/svg+xml',sizes:'any'},
       // This late site-owned icon did not exist at initial paint. Respect the
       // source it had before the extension's subsequent correction.
-      {href:'/site-late-favicon.svg',type:'image/svg+xml',sizes:null}
+      {href:'/site-late-favicon.svg',type:'image/svg+xml',sizes:null},
+      {href:'/new-site-icon.ico',type:null,sizes:null}
     ],'disposing restores the original favicon declarations');
     // A genuine Send button is a second independent submission path.
     // Simulate a quick response with no observed Stop control at all.
