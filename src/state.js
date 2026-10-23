@@ -80,7 +80,13 @@
       const activeNotice=Boolean(sample.noticeKind)&&
         (sample.noticeToken!==baselineNotice||
          sample.noticeKind==='limit'||sample.noticeKind==='conversation_load_failed');
-      if(!stop&&!replyJustStarted&&!activeNotice&&
+      // A fresh explicit stream-failure banner is terminal negative evidence,
+      // even if Copy appeared or the page previously inferred completion.
+      // Submission baselines exclude older banners left by prior attempts.
+      if(sample.noticeKind==='input_stream_error'&&
+         sample.noticeToken!==baselineNotice){
+        phase='failed';read='viewed';reason='visible-input-stream-error';
+      }else if(!stop&&!replyJustStarted&&!activeNotice&&
          (phase==='submitted'||phase==='generating'||phase==='verifying'||phase==='interrupted') &&
          (newTerminalAfterReply||terminalAfterStop)){
         phase='finished';read=sample.hidden?'unread':'viewed';
