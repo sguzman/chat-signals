@@ -220,6 +220,60 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
       {href:'/site-late-favicon.svg',type:'image/svg+xml',sizes:null},
       {href:'/new-site-icon.ico',type:null,sizes:null}
     ],'disposing restores the original favicon declarations');
+    // Startup/reload while a response is already in progress: an unlabeled
+    // square Stop action (observed Oct 2026) must override initial idle.
+    // A screenshot/title-only test misses this failure entirely.
+    const resumed=await context.newPage();
+    try{
+      await resumed.route('https://chatgpt.com/**',route=>route.fulfill({
+        contentType:'text/html',body:html,status:200
+      }));
+      await resumed.goto('https://chatgpt.com/c/synthetic-active-after-reload');
+      const stopGlyph='M4.5 5.75C4.5 5.05964 5.05964 4.5 5.75 4.5H14.25C14.9404 4.5 15.5 5.05964 15.5 5.75V14.25C15.5 14.9404 14.9404 15.5 14.25 15.5H5.75C5.05964 15.5 4.5 14.9404 4.5 14.25V5.75Z';
+      await resumed.evaluate(glyph=>{
+        const form=document.querySelector('form');
+        form.dataset.chatgptComposer='1';
+        const stop=document.createElement('button');stop.type='button';
+        stop.className='size-token-button-composer';
+        stop.innerHTML='<svg class="icon-primary-action"><path /></svg>';
+        stop.querySelector('path').setAttribute('d',glyph);
+        form.append(stop);
+        // Identical icon outside composer must never be used as a Stop signal.
+        const other=document.createElement('button');
+        other.innerHTML=stop.innerHTML;document.body.append(other);
+      },stopGlyph);
+      for(const script of scripts)await resumed.addScriptTag({content:script});
+      await resumed.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='generating');
+      assert.match(await resumed.title(),/^⏳ /u,
+        'restored actively generating tab must not remain idle');
+      assert.equal(await resumed.evaluate(()=>document.documentElement.dataset.chatSignalsReason),
+        'stop-visible');
+      // Composer changes Stop -> Send in place by changing the SVG path
+      // attribute; a structural-only MutationObserver misses that transition.
+      await resumed.evaluate(()=>{
+        document.querySelector('form button.size-token-button-composer svg path')
+          .setAttribute('d','M0 0 L10 10');
+      });
+      await resumed.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='verifying');
+      assert.match(await resumed.title(),/^🔎 /u);
+    }finally{await resumed.close();}
+    // An unrelated square icon must not create a generating state.
+    const noStop=await context.newPage();
+    try{
+      await noStop.route('https://chatgpt.com/**',route=>route.fulfill({
+        contentType:'text/html',body:html,status:200
+      }));
+      await noStop.goto('https://chatgpt.com/c/synthetic-not-generating');
+      await noStop.evaluate(()=>{
+        const other=document.createElement('button');
+        other.type='button';other.className='size-token-button-composer';
+        other.innerHTML='<svg class="icon-primary-action"><path d="M4.5 5.75C4.5 5.05964 5.05964 4.5 5.75 4.5H14.25C14.9404 4.5 15.5 5.05964 15.5 5.75V14.25C15.5 14.9404 14.9404 15.5 14.25 15.5H5.75C5.05964 15.5 4.5 14.9404 4.5 14.25V5.75Z"/></svg>';
+        document.body.append(other);
+      });
+      for(const script of scripts)await noStop.addScriptTag({content:script});
+      await noStop.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='idle');
+      assert.match(await noStop.title(),/^⚪ /u);
+    }finally{await noStop.close();}
     // A genuine Send button is a second independent submission path.
     // Simulate a quick response with no observed Stop control at all.
     const quick=await context.newPage();

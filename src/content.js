@@ -16,7 +16,15 @@
   let tokenCount=0,current=null,currentHex=null,observer=null,observedMain=null,
     queued=false,job=0,clickSettleJob=0,intentExpiryJob=0,lastIntentAt=-1000,routeNonce=0,iconLink=null,previousState=-1,lastProbe=0,
     titleObserver=null,watchedTitle=null,titleWriteCount=0,titleWriteWindow=0;
-  const STOP='button[data-testid="stop-button"],button[data-testid="fruitjuice-stop-button"],button[aria-label="Stop generating"],button[aria-label="Stop response"]';
+  // Oct 2026 ChatGPT composer variant renders Stop as an unlabeled button
+  // carrying this square path (distinct from voice/Send). Require the exact
+  // glyph within the composer; do not use any generic button/spinner match.
+  const STOP_GLYPH='M4.5 5.75C4.5 5.05964 5.05964 4.5 5.75 4.5H14.25C14.9404 4.5 15.5 5.05964 15.5 5.75V14.25C15.5 14.9404 14.9404 15.5 14.25 15.5H5.75C5.05964 15.5 4.5 14.9404 4.5 14.25V5.75Z';
+  const STOP='button[data-testid="stop-button"],button[data-testid="fruitjuice-stop-button"],'+
+    'button[aria-label="Stop generating"],button[aria-label="Stop response"],'+
+    'button[aria-label="Stop streaming"],'+
+    'form[data-chatgpt-composer] button.size-token-button-composer:has(svg.icon-primary-action > path[d="'+STOP_GLYPH+'"]),'+
+    'form:has(#prompt-textarea,[data-testid="prompt-textarea"]) button.size-token-button-composer:has(svg.icon-primary-action > path[d="'+STOP_GLYPH+'"])';
   const SEND='button[data-testid="send-button"],button[data-testid="composer-submit-button"],button[aria-label="Send prompt" i],button[aria-label="Send message" i],button[aria-label="Send" i],button[data-testid="regenerate-response-button"],button[data-testid="retry-button"]';
   const EDITOR='#prompt-textarea,[data-testid="prompt-textarea"],[contenteditable="true"][role="textbox"]';
   const ASSISTANT='[data-message-author-role="assistant"],[data-turn="assistant"],'+
@@ -311,6 +319,14 @@
     '[data-testid^="conversation-turn"],'+STOP+','+SEND+','+ACTION+','+
     STATUS_SELECTOR;
   function relevantChanges(records){
+    // Stop/Send may swap their SVG glyph in-place, with no child insertion.
+    // Watch only narrow control attributes in the current composer.
+    for(const record of records){
+      if(record.type!=='attributes')continue;
+      const node=record.target;
+      if((node.localName==='path'||node.localName==='button'||node.localName==='svg')&&
+         node.closest?.('form')?.querySelector(EDITOR))return true;
+    }
     // Streaming text children have no structural evidence. Inspect at most
     // 64 inserted/removed roots and 80 descendants per nontrivial root.
     let examined=0;
@@ -354,7 +370,8 @@
           records.some(record=>record.removedNodes.length>0))||
          relevantChanges(records))schedule();
     });
-    observer.observe(main,{subtree:true,childList:true});
+    observer.observe(main,{subtree:true,childList:true,attributes:true,
+      attributeFilter:['d','aria-label','data-testid']});
   }
   function emitEvent(previous,next){
     if(!current||!eventAlerts)return;

@@ -165,6 +165,23 @@ try{
   await a.close();
   const c=await visit('normal-003');
   assert.match(await c.evaluate(()=>document.documentElement.dataset.chatSignalsColor),/^#[0-9a-f]{6}$/);
+  // Actual installed MV3 content script must detect an unlabeled Stop
+  // square already present when a restored ChatGPT document first loads.
+  const active=await context.newPage();
+  try{
+    const stopGlyph='M4.5 5.75C4.5 5.05964 5.05964 4.5 5.75 4.5H14.25C14.9404 4.5 15.5 5.05964 15.5 5.75V14.25C15.5 14.9404 14.9404 15.5 14.25 15.5H5.75C5.05964 15.5 4.5 14.9404 4.5 14.25V5.75Z';
+    const busy=sample.replace('<form>',
+      '<form data-chatgpt-composer="true"><button type="button" class="size-token-button-composer"><svg class="icon-primary-action"><path d="'+stopGlyph+'"/></svg></button>');
+    await active.route('https://chatgpt.com/**',route=>route.fulfill({
+      contentType:'text/html',status:200,body:busy
+    }));
+    await active.goto('https://chatgpt.com/c/synthetic-active-after-restore');
+    await active.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='generating');
+    assert.match(await active.title(),/^⏳ /u);
+    await active.evaluate(()=>document.querySelector('form button.size-token-button-composer path')
+      .setAttribute('d','M0 0 L1 1'));
+    await active.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='verifying');
+  }finally{await active.close();}
   console.log('PASS: unpacked MV3 extension installed; worker, per-tab palette, favicon, generation lifecycle and close');
 }finally{
   if(context)await context.close();
