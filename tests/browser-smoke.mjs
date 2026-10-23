@@ -408,6 +408,88 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
       assert.equal(await quick.evaluate(()=>window.__completionChimes),1,
         '🔔 unread -> ✅ viewed must not replay the chime');
     }finally{await quick.close();}
+    // Regression: completion while hidden must be recognized from terminal
+    // DOM changes alone. Visiting the tab is never the completion trigger.
+    // The current reply's Copy action is CSS-hidden (not laid out) and may be
+    // enabled by an in-place aria-label change after Stop disappears.
+    for(const [scenario,copyBeforeStopEnds] of [
+      ['copy-after-stop',false],['copy-before-stop',true]
+    ]){
+      const hiddenReply=await context.newPage();
+      try{
+        await hiddenReply.route('https://chatgpt.com/**',route=>route.fulfill({
+          contentType:'text/html',body:html,status:200
+        }));
+        await hiddenReply.goto('https://chatgpt.com/c/synthetic-hidden-'+scenario);
+        for(const script of scripts)await hiddenReply.addScriptTag({content:script});
+        await hiddenReply.evaluate(()=>{
+          window.__completionSounds=[];
+          window.ChatSignalsChime={
+            unlock:async()=> 'ready',
+            play:async sound=>{window.__completionSounds.push(sound);return 'scheduled';}
+          };
+          Object.defineProperty(document,'hidden',
+            {configurable:true,get:()=>true});
+        });
+        await hiddenReply.waitForFunction(()=>
+          document.documentElement.dataset.chatSignalsState==='idle');
+        await hiddenReply.evaluate(()=>{
+          const editor=document.querySelector('#prompt-textarea');
+          editor.dispatchEvent(new KeyboardEvent('keydown',
+            {key:'Enter',bubbles:true,cancelable:true}));
+          const turn=document.createElement('article');
+          turn.dataset.testid='conversation-turn-current';
+          turn.innerHTML='<div data-message-author-role="assistant">'+
+            '<div class="streaming-body"></div></div>'+
+            '<div class="turn-action-controls">'+
+            '<button id="final-copy" aria-label="Pending"'+
+            ' style="display:none">Copy</button></div>';
+          document.querySelector('form').before(turn);
+          const stop=document.createElement('button');
+          stop.dataset.testid='fruitjuice-stop-button';
+          document.querySelector('form').append(stop);
+        });
+        await hiddenReply.waitForFunction(()=>
+          document.documentElement.dataset.chatSignalsState==='generating');
+        if(copyBeforeStopEnds){
+          await hiddenReply.evaluate(()=>
+            document.querySelector('#final-copy').setAttribute('aria-label','Copy'));
+          await hiddenReply.waitForTimeout(350);
+          assert.equal(await hiddenReply.evaluate(()=>
+            document.documentElement.dataset.chatSignalsState),'generating',
+            'Copy before Stop disappearance cannot imply completion');
+        }
+        await hiddenReply.evaluate(()=>
+          document.querySelector('[data-testid="fruitjuice-stop-button"]').remove());
+        if(!copyBeforeStopEnds){
+          await hiddenReply.waitForFunction(()=>
+            document.documentElement.dataset.chatSignalsState==='verifying');
+          assert.equal(await hiddenReply.evaluate(()=>
+            window.__completionSounds.length),0);
+          await hiddenReply.evaluate(()=>
+            document.querySelector('#final-copy').setAttribute('aria-label','Copy'));
+        }
+        await hiddenReply.waitForFunction(()=>
+          document.documentElement.dataset.chatSignalsState==='finished',
+          null,{timeout:5000});
+        assert.match(await hiddenReply.title(),/^🔔 /u,
+          'completion occurs while document.hidden, without visiting tab');
+        assert.deepEqual(await hiddenReply.evaluate(()=>
+          window.__completionSounds),['success']);
+        assert.equal(await hiddenReply.evaluate(()=>
+          document.querySelector('#final-copy').getClientRects().length),0,
+          'CSS-hidden Copy is still structurally owned by the current reply');
+        await hiddenReply.evaluate(()=>{
+          Object.defineProperty(document,'hidden',
+            {configurable:true,get:()=>false});
+          document.dispatchEvent(new Event('visibilitychange'));
+        });
+        await hiddenReply.waitForFunction(()=>document.title.startsWith('✅ '));
+        assert.deepEqual(await hiddenReply.evaluate(()=>
+          window.__completionSounds),['success'],
+          'visiting only changes read status, never sends another completion');
+      }finally{await hiddenReply.close();}
+    }
     // Distinct UI-confirmed warnings/errors/limits, with no repeated sound
     // for repeated DOM observations of the same synthetic event.
     for(const [kind,statusText,expectedSound] of [
