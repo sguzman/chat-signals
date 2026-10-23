@@ -4,7 +4,7 @@ const vm=require('node:vm');
 const fs=require('node:fs');
 const color=require('../src/color.js');
 
-function start(){
+function start(persistentStorage={}){
   let message,removed,clicked,session={},notifications=[],activations=[];
   let tabWindows=new Map(),tabUrls=new Map();
   const nonce='0123456789abcdef0123456789abcdef';
@@ -29,10 +29,16 @@ function start(){
         notifications.push({id,options});cb(id);
       }
     },
-    storage:{session:{
-      get:(_key,callback)=>callback({...session}),
-      set:(value,callback)=>{session={...session,...value};callback();}
-    }}
+    storage:{
+      session:{
+        get:(_key,callback)=>callback({...session}),
+        set:(value,callback)=>{session={...session,...value};callback();}
+      },
+      local:{
+        get:(_key,callback)=>callback({...persistentStorage}),
+        set:(value,callback)=>{Object.assign(persistentStorage,value);callback();}
+      }
+    }
   };
   vm.runInNewContext(fs.readFileSync('src/background.js','utf8'),{
     chrome,ChatSignalsColor:color
@@ -51,7 +57,7 @@ function start(){
     type:'chat-signals-event',event:kind,key,epoch,documentToken,iconUrl},origin);
   return {register,complete,event,remove:id=>{
       tabWindows.delete(id);tabUrls.delete(id);removed(id);
-    },read:()=>session,
+    },read:()=>session,readColors:()=>persistentStorage.chatSignalsColorLedgerV1,
     notifications:()=>notifications,
     setWindow:(tabId,windowId)=>tabWindows.set(tabId,windowId),
     setUrl:(tabId,url)=>tabUrls.set(tabId,url),
@@ -223,4 +229,41 @@ test('click does not activate a tab that navigated away from chatgpt.com',async(
  w.setUrl(61,'https://example.org/');
  w.clickImmediate('chat-signals-tab-61');
  assert.equal(w.activations().length,0);
+});
+
+test('restart preserves each remembered chat color despite reverse tab registration order',async()=>{
+ const persistent={};
+ const keyA=color.hash('chat:restart-conversation-a');
+ const keyB=color.hash('chat:restart-conversation-b');
+ const keyC=color.hash('chat:restart-conversation-c');
+ const first=start(persistent);
+ const a=await first.register(1,keyA);
+ const b=await first.register(2,keyB);
+ const c=await first.register(3,keyC);
+ assert.equal(new Set([a.hex,b.hex,c.hex]).size,3,
+   'initial simultaneous allocation still favors distinct OKLab colors');
+ assert.equal(Object.keys(first.readColors()).length,3);
+ const reloaded=start(persistent);
+ assert.equal((await reloaded.register(13,keyC)).hex,c.hex);
+ assert.equal((await reloaded.register(12,keyB)).hex,b.hex);
+ assert.equal((await reloaded.register(11,keyA)).hex,a.hex);
+ assert.ok(Object.keys(reloaded.readColors()).every(x=>/^[0-9a-f]{16}$/.test(x)),
+   'permanent records contain hashed identities only');
+});
+
+test('a new tab of the same chat reuses the persisted color',async()=>{
+ const persistent={};
+ const key=color.hash('chat:duplicate-conversation');
+ const first=start(persistent);
+ const a=await first.register(4,key);
+ const reload=start(persistent);
+ const again=await reload.register(6,key,'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+ assert.equal(again.hex,a.hex);
+ assert.equal(Object.keys(reload.readColors()).length,1);
+});
+
+test('content script waits for background color assignment instead of flashing a provisional swatch',()=>{
+ const source=fs.readFileSync('src/content.js','utf8');
+ assert.doesNotMatch(source,/currentHex=color\.choose\(color\.hash\(identity\.key\)\)/);
+ assert.match(source,/applyHex\(answer\.hex\)/);
 });
