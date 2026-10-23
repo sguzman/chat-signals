@@ -23,6 +23,30 @@
       reason='user-submit-intent';changed++;
       return out();
     }
+    function restore(saved,sample){
+      // A historical snapshot is presentation evidence, not live transport
+      // evidence. Caller must validate the identity and check live controls.
+      if(!key||!sample||sample.key!==key||epoch!==0||
+         phase!=='idle'||!saved||typeof saved!=='object')return out();
+      if(!phases.has(saved.phase)||saved.phase==='unknown'||
+         saved.phase==='idle'||!Number.isSafeInteger(saved.epoch)||
+         saved.epoch<0)return out();
+      epoch=saved.epoch;
+      // Without a currently visible Stop control, an old running/submitted
+      // state must not claim that remote work is still running.
+      phase=['generating','submitted','interrupted'].includes(saved.phase)?
+        'verifying':saved.phase;
+      read=phase==='finished'&&saved.read==='unread'?'unread':'viewed';
+      baselineAction=sample.actionToken||null;
+      baselineAssistant=sample.assistantToken||null;
+      baselineNotice=sample.noticeToken||null;
+      lastSample={assistantToken:sample.assistantToken||null,
+        actionToken:sample.actionToken||null};
+      stopSeen=false;cancelPendingStop=false;
+      reason='restored-'+saved.phase+'-unverified';
+      changed++;
+      return out();
+    }
     function expireIntent(){
       if(phase==='submitted'){
         phase='unknown';reason='submission-unconfirmed';changed++;
@@ -124,7 +148,7 @@
       }
       return out();
     }
-    return Object.freeze({observe,reset,cancel,viewed,intent,expireIntent,snapshot:out});
+    return Object.freeze({observe,reset,restore,cancel,viewed,intent,expireIntent,snapshot:out});
   }
   const api=Object.freeze({create,phases});
   root.ChatSignalsState=api;
