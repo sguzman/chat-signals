@@ -51,13 +51,16 @@ function start(persistentStorage={}){
   }
   const register=(id,key,documentToken=nonce)=>send(id,{
     type:'chat-signals-register',key,documentToken});
+  const saveState=(id,key,state,documentToken=nonce)=>send(id,{
+    type:'chat-signals-state',key,documentToken,state});
   const complete=(id,key,epoch=1,documentToken=nonce,origin,iconUrl)=>send(id,{
     type:'chat-signals-complete',key,epoch,documentToken,iconUrl},origin);
   const event=(id,key,kind,epoch=1,documentToken=nonce,origin,iconUrl)=>send(id,{
     type:'chat-signals-event',event:kind,key,epoch,documentToken,iconUrl},origin);
-  return {register,complete,event,remove:id=>{
+  return {register,saveState,complete,event,remove:id=>{
       tabWindows.delete(id);tabUrls.delete(id);removed(id);
     },read:()=>session,readColors:()=>persistentStorage.chatSignalsColorLedgerV1,
+    readStates:()=>persistentStorage.chatSignalsStateLedgerV1,
     notifications:()=>notifications,
     setWindow:(tabId,windowId)=>tabWindows.set(tabId,windowId),
     setUrl:(tabId,url)=>tabUrls.set(tabId,url),
@@ -266,4 +269,63 @@ test('content script waits for background color assignment instead of flashing a
  const source=fs.readFileSync('src/content.js','utf8');
  assert.doesNotMatch(source,/currentHex=color\.choose\(color\.hash\(identity\.key\)\)/);
  assert.match(source,/applyHex\(answer\.hex\)/);
+});
+
+test('response state survives extension worker reload with same tab and conversation',async()=>{
+ const persistent={};const key=color.hash('chat:stored-completion');
+ const first=start(persistent);
+ const initial=await first.register(20,key);
+ assert.equal(initial.restored,null);
+ assert.equal((await first.saveState(20,key,
+   {phase:'finished',read:'unread',epoch:3})).saved,true);
+ const reloaded=start(persistent);
+ const result=await reloaded.register(20,key,
+   'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+ assert.deepEqual(JSON.parse(JSON.stringify(result.restored)),
+   {phase:'finished',read:'unread',epoch:3});
+ assert.equal((await reloaded.register(21,key)).restored,null,
+   'a separate tab must not inherit unread state');
+ assert.equal(Object.keys(reloaded.readStates()).length,1);
+ assert.ok(!JSON.stringify(reloaded.readStates()).includes('stored-completion'));
+});
+
+test('snapshots cannot leak across changed conversations, documents or tabs',async()=>{
+ const w=start({});
+ const first=color.hash('chat:first-identity');
+ const other=color.hash('chat:other-identity');
+ await w.register(71,first);
+ assert.equal((await w.saveState(71,other,
+   {phase:'finished',read:'unread',epoch:2})).saved,false);
+ assert.equal((await w.saveState(71,first,
+   {phase:'finished',read:'unread',epoch:2},
+   'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')).saved,false);
+ assert.equal((await w.saveState(71,first,
+   {phase:'made-up',read:'unread',epoch:2})).saved,false);
+ await w.saveState(71,first,{phase:'failed',read:'viewed',epoch:2});
+ assert.equal((await w.register(71,other)).restored,null);
+ await w.saveState(71,other,{phase:'limit',read:'viewed',epoch:3});
+ assert.equal((await w.register(71,other)).restored.phase,'limit');
+});
+
+test('closing a tab deletes its persisted status even when session storage is gone',async()=>{
+ const persistent={};const key=color.hash('chat:close-cleanup');
+ const first=start(persistent);await first.register(83,key);
+ await first.saveState(83,key,{phase:'finished',read:'unread',epoch:2});
+ const restarted=start(persistent);
+ restarted.remove(83);
+ // Trigger serialization by sending a registration in the same worker.
+ await restarted.register(84,color.hash('chat:another-chat'));
+ assert.equal(restarted.readStates()['83'],undefined);
+ assert.equal((await restarted.register(83,key)).restored,null);
+});
+
+test('invalid persisted status fields do not restore executable or arbitrary data',async()=>{
+ const persistent={};const key=color.hash('chat:malformed-record');
+ const w=start(persistent);await w.register(95,key);
+ const invalid=[{phase:'finished',read:'unread',epoch:-1},
+   {phase:'finished',read:'unknown',epoch:1},
+   {phase:'finished',read:'unread',epoch:'3'}];
+ for(const value of invalid)
+   assert.equal((await w.saveState(95,key,value)).saved,false);
+ assert.equal((await start(persistent).register(95,key)).restored,null);
 });
