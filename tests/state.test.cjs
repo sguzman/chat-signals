@@ -253,3 +253,59 @@ test('an older input-stream banner cannot poison a later successful Retry',()=>{
    noticeKind:'input_stream_error',noticeToken:42}));
  assert.equal(f.snapshot().phase,'finished');
 });
+
+test('reload restores a background unread completion without claiming a new event',()=>{
+  const f=create();const visible=event({assistantToken:12,actionToken:22,hidden:true});
+  f.observe(visible);
+  f.restore({phase:'finished',read:'unread',epoch:4},visible);
+  assert.equal(f.snapshot().phase,'finished');
+  assert.equal(f.snapshot().read,'unread');
+  assert.equal(f.snapshot().epoch,4);
+  const revision=f.snapshot().changed;
+  f.observe(visible);
+  assert.equal(f.snapshot().changed,revision,'already mounted Copy is not a fresh response');
+  f.viewed();
+  assert.equal(f.snapshot().phase,'finished');
+  assert.equal(f.snapshot().read,'viewed');
+});
+
+test('an old generating state reloads as verifying without direct Stop',()=>{
+  const f=create();const visible=event({assistantToken:12,actionToken:22});
+  f.observe(visible);
+  f.restore({phase:'generating',read:'viewed',epoch:3},visible);
+  assert.equal(f.snapshot().phase,'verifying');
+  assert.equal(f.snapshot().epoch,3);
+  f.observe(visible);
+  assert.equal(f.snapshot().phase,'verifying',
+    'old visible Copy is not independent proof of current completion');
+});
+
+test('failure and conversation limit history survive reload until new intent',()=>{
+  for(const phase of ['failed','limit']){
+    const f=create();f.observe(event());
+    f.restore({phase,read:'viewed',epoch:6},event());
+    assert.equal(f.snapshot().phase,phase);
+    f.intent(event());
+    assert.equal(f.snapshot().phase,'submitted');
+    assert.equal(f.snapshot().epoch,7);
+  }
+});
+
+test('live Stop and errors outrank restored history',()=>{
+  for(const observation of [
+    event({stop:true}),event({noticeKind:'input_stream_error',noticeToken:4})
+  ]){
+    const f=create();f.observe(event());
+    f.restore({phase:'finished',read:'unread',epoch:3},observation);
+    assert.equal(f.snapshot().phase,'idle');
+  }
+});
+
+test('foreign or malformed response snapshots cannot be restored',()=>{
+  const f=create();f.observe(event());
+  f.restore({phase:'finished',read:'unread',epoch:2},{...event(),key:'foreign'});
+  f.restore({phase:'finished',read:'unread',epoch:-1},event());
+  f.restore({phase:'made-up',read:'unread',epoch:2},event());
+  assert.equal(f.snapshot().phase,'idle');
+  assert.equal(f.snapshot().epoch,0);
+});
