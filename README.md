@@ -27,8 +27,8 @@ Firefox Release requires a Mozilla-signed add-on. No listing in the public add-o
 
 1. Update local checkout of `main`: `git pull --ff-only`.
 2. From the repo root, package **only required extension files**, preserving directory paths:
-   `bsdtar -a -cf chat-signals-0.3.11.zip manifest.json src icons`.
-   Verify the entries with `bsdtar -tf chat-signals-0.3.11.zip`: `manifest.json` must be at the archive root and JavaScript entries must retain their `src/` prefixes (including `src/background.js` and `src/content.js`). Do **not** use `python3 -m zipfile -c` for this archive: it flattens paths and causes missing-script errors. `bsdtar` is supplied by Arch's `libarchive` package and retains the `src/` directory.
+   `bsdtar -a -cf chat-signals-0.3.12.zip manifest.json src icons`.
+   Verify the entries with `bsdtar -tf chat-signals-0.3.12.zip`: `manifest.json` must be at the archive root and JavaScript entries must retain their `src/` prefixes (including `src/background.js` and `src/content.js`). Do **not** use `python3 -m zipfile -c` for this archive: it flattens paths and causes missing-script errors. `bsdtar` is supplied by Arch's `libarchive` package and retains the `src/` directory.
 3. Sign into [Mozilla Add-ons Developer Hub](https://addons.mozilla.org/developers/) and submit a new add-on. Select **On your own** (unlisted / self-distribution), not **On this site**. Upload the generated ZIP and follow the validation/signing steps.
 4. When signing is complete, download the **signed XPI** from the add-on's version page in the Developer Hub. **Do not** rename the unsigned ZIP to XPI and expect Firefox Release to accept it.
 5. In the Firefox profile where Chat Signals will live, open `about:addons`, click the gear icon, select **Install Add-on From File**, select the signed XPI and accept permissions. Remove the temporary Chat Signals instance first if installing into the same spare profile.
@@ -116,3 +116,11 @@ Previously the content script immediately painted a provisional hash-derived swa
 ### v0.3.11 — Find terminal controls in deeply formatted replies
 
 Some long responses contain more than the bounded reverse DOM walk of 768 elements between the final Copy control and the inner assistant marker. On such pages, even an available terminal Copy control can be missed, leaving the tab in 🔎 verifying after Stop disappears. The observer now recognizes the containing conversation-turn wrapper directly from any descendant near the tail and checks for a contained assistant marker, without reading answer text, walking arbitrarily long messages or searching the entire page for Copy controls. User-only turn wrappers are skipped. A synthetic regression includes 1,200 descendants, a stale Copy control in the previous reply, and a new final Copy control. This does not change completion criteria, colors, alerts or background behavior. The precise live DOM cause of the reported stuck 🔎 state has not been captured, so this release addresses a confirmed susceptible code path rather than claiming full live-site verification.
+
+### v0.3.12 — Background-tab completion observation
+
+Some completed responses remained ⏳ or 🔎 until their tab was visited. The observer's 250 ms setTimeout scheduling can be throttled in background tabs, and its mutation filter missed certain completion transitions: removed composer Stop buttons whose scoped selector no longer matches after detachment, in-place toolbar relabeling/visibility changes, and CSS-hidden yet mounted Copy controls.
+
+While a response is active, relevant composer-control and assistant-action-footer mutations now trigger one coalesced microtask reconciliation, independent of the ordinary timer. The observer examines only scoped DOM structure/control attributes, not message text. A Copy control structurally owned by the latest assistant turn is considered even if CSS hides it pending hover; it still cannot establish completion while Stop is present, and fresh-reply, baseline, and visible-error safeguards remain in place. Nonterminal streaming text remains ignored.
+
+Synthetic Firefox/Chromium smoke coverage includes hidden-page completion, Copy made available before or after Stop disappears, unread 🔔 before focus and viewed ✅ after focus, without duplicate sounds. No new permissions, cross-tab injections, reloads, network interception, favicon or notification behavior changes. This fix cannot observe content in Firefox tabs that the browser has genuinely suspended/discarded, nor certify a response if the site does not expose terminal controls in its DOM.
