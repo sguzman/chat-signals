@@ -220,6 +220,61 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
       {href:'/site-late-favicon.svg',type:'image/svg+xml',sizes:null},
       {href:'/new-site-icon.ico',type:null,sizes:null}
     ],'disposing restores the original favicon declarations');
+    // A long formatted reply may contain more than 768 DOM descendants
+    // between its footer's Copy button and the assistant marker. The latest
+    // turn wrapper, not a global/old Copy button, must be the action scope.
+    const rich=await context.newPage();
+    try{
+      await rich.route('https://chatgpt.com/**',route=>route.fulfill({
+        contentType:'text/html',body:html,status:200
+      }));
+      await rich.goto('https://chatgpt.com/c/synthetic-rich-terminal');
+      for(const script of scripts)await rich.addScriptTag({content:script});
+      await rich.waitForFunction(()=>
+        document.documentElement.dataset.chatSignalsState==='idle');
+      await rich.evaluate(()=>{
+        const turn=document.createElement('div');
+        turn.dataset.testid='conversation-turn-rich';
+        const article=document.createElement('article');
+        article.dataset.messageAuthorRole='assistant';
+        const body=document.createElement('section');
+        for(let i=0;i<1200;i++){
+          const span=document.createElement('span');span.textContent='x';
+          body.append(span);
+        }
+        article.append(body);turn.append(article);
+        const footer=document.createElement('div');
+        footer.className='rich-footer';turn.append(footer);
+        document.querySelector('form').before(turn);
+        const stop=document.createElement('button');
+        stop.dataset.testid='fruitjuice-stop-button';
+        document.querySelector('form').append(stop);
+      });
+      await rich.waitForFunction(()=>
+        document.documentElement.dataset.chatSignalsState==='generating');
+      await rich.evaluate(()=>{
+        const old=document.querySelector('[data-testid="conversation-turn-old"]');
+        const stale=document.createElement('button');
+        stale.setAttribute('aria-label','Copy');
+        old.append(stale);
+      });
+      await rich.waitForTimeout(450);
+      assert.equal(await rich.evaluate(()=>
+        document.documentElement.dataset.chatSignalsState),'generating',
+        'a stale earlier Copy must not complete a large active reply');
+      await rich.evaluate(()=>{
+        document.querySelector('[data-testid="fruitjuice-stop-button"]').remove();
+        const copy=document.createElement('button');
+        copy.setAttribute('aria-label','Copy');
+        document.querySelector('.rich-footer').append(copy);
+      });
+      await rich.waitForFunction(()=>
+        document.documentElement.dataset.chatSignalsState==='finished');
+      assert.equal(await rich.evaluate(()=>
+        document.documentElement.dataset.chatSignalsReason),
+        'fresh-assistant-terminal-action');
+      assert.match(await rich.title(),/^✅ /u);
+    }finally{await rich.close();}
     // Startup/reload while a response is already in progress: an unlabeled
     // square Stop action (observed Oct 2026) must override initial idle.
     // A screenshot/title-only test misses this failure entirely.
