@@ -275,6 +275,68 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
         'fresh-assistant-terminal-action');
       assert.match(await rich.title(),/^✅ /u);
     }finally{await rich.close();}
+    // The worker remembers only a per-tab, hashed-identity state snapshot.
+    // A new document must hydrate that record before writing an idle prefix.
+    // These fixtures simulate the registration reply; background unit tests
+    // cover the actual local-storage and tab-ID binding round trip.
+    for(const [name,saved,stopLabel,expectedTitle,expectedPhase] of [
+      ['unread-completion',{phase:'finished',read:'unread',epoch:4},
+        null,'🔔 ','finished'],
+      ['previous-failure',{phase:'failed',read:'viewed',epoch:3},
+        null,'⚠️ ','failed'],
+      ['old-generating',{phase:'generating',read:'viewed',epoch:5},
+        null,'🔎 ','verifying'],
+      ['active-stop',{phase:'finished',read:'unread',epoch:2},
+        'Stop generating','⏳ ','generating']
+    ]){
+      const restored=await context.newPage();
+      try{
+        await restored.route('https://chatgpt.com/**',route=>route.fulfill({
+          contentType:'text/html',body:html,status:200
+        }));
+        await restored.goto('https://chatgpt.com/c/synthetic-restore-'+name);
+        await restored.evaluate(({saved,stopLabel})=>{
+          Object.defineProperty(document,'hidden',
+            {configurable:true,get:()=>true});
+          if(stopLabel){
+            const btn=document.createElement('button');
+            btn.setAttribute('aria-label',stopLabel);
+            document.querySelector('form').append(btn);
+          }
+          window.__restoredStateMessages=[];
+          window.chrome={runtime:{lastError:null,sendMessage:(request,reply)=>{
+            window.__restoredStateMessages.push(request);
+            if(request.type==='chat-signals-register')
+              reply?.({hex:'#6f9bc5',restored:saved});
+            else if(request.type==='chat-signals-state')
+              reply?.({saved:true});
+            else reply?.({created:true});
+          }}};
+        },{saved,stopLabel});
+        for(const script of scripts)await restored.addScriptTag({content:script});
+        await restored.waitForFunction(({expectedPhase})=>
+          document.documentElement.dataset.chatSignalsState===expectedPhase,
+          {expectedPhase});
+        assert.ok((await restored.title()).startsWith(expectedTitle),
+          'stored '+name+' must not reset to idle');
+        const events=await restored.evaluate(()=>window.__restoredStateMessages);
+        assert.equal(events.filter(e=>e.type==='chat-signals-event').length,0,
+          'restoration never replays old chimes or notifications');
+        assert.ok(events.some(e=>e.type==='chat-signals-state'),
+          'restored state is saved after reconciliation');
+        if(name==='unread-completion'){
+          await restored.evaluate(()=>{
+            Object.defineProperty(document,'hidden',
+              {configurable:true,get:()=>false});
+            document.dispatchEvent(new Event('visibilitychange'));
+          });
+          await restored.waitForFunction(()=>document.title.startsWith('✅ '));
+          assert.equal(await restored.evaluate(()=>
+            window.__restoredStateMessages.filter(e=>
+              e.type==='chat-signals-event').length),0);
+        }
+      }finally{await restored.close();}
+    }
     // Startup/reload while a response is already in progress: an unlabeled
     // square Stop action (observed Oct 2026) must override initial idle.
     // A screenshot/title-only test misses this failure entirely.
