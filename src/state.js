@@ -58,20 +58,26 @@
       }
       const freshReply=Boolean(sample.assistantToken)&&
         sample.assistantToken!==baselineAssistant;
+      const priorActionAbsent=lastSample?.assistantToken===sample.assistantToken&&
+        !lastSample?.actionToken;
+      const replyJustStarted=freshReply&&!stop&&(phase==='submitted'||
+        (phase==='unknown'&&reason==='submission-unconfirmed'));
       // A new assistant turn is evidence that output started. This does not
       // claim completion or establish that the transport succeeded.
-      if(freshReply&&!stop&&(phase==='submitted'||
-         (phase==='unknown'&&reason==='submission-unconfirmed'))){
+      if(replyJustStarted){
         phase='generating';reason='new-assistant-turn-visible';
       }
       const freshAction=Boolean(sample.actionToken)&&sample.actionToken!==baselineAction;
-      const replyFresh=freshReply;
-      const freshActionOnStartedTurn=baselineAction===null&&freshAction&&
-        (baselineAssistant===null||reason==='stop-visible'||
-         reason==='stop-disappeared-unconfirmed');
-      // A replaced old Copy button alone is not a completed new response.
-      if(!stop && (phase==='submitted'||phase==='generating'||phase==='verifying'||phase==='interrupted') &&
-         freshAction && (replyFresh||freshActionOnStartedTurn)){
+      // One newly-mounted reply plus an already-mounted toolbar is *not*
+      // evidence of completion. Wait for a terminal Copy control to appear
+      // AFTER that reply is observed, or for a previously seen Stop to end.
+      const newTerminalAfterReply=priorActionAbsent&&freshAction&&freshReply;
+      const terminalAfterStop=freshAction&&
+        reason==='stop-disappeared-unconfirmed'&&
+        (freshReply||(baselineAction===null&&priorActionAbsent));
+      if(!stop&&!replyJustStarted&&
+         (phase==='submitted'||phase==='generating'||phase==='verifying'||phase==='interrupted') &&
+         (newTerminalAfterReply||terminalAfterStop)){
         phase='finished';read=sample.hidden?'unread':'viewed';
         reason='fresh-assistant-terminal-action';
       }else if(sample.noticeKind==='limit'){
@@ -90,7 +96,8 @@
       }else if(!sample.noticeKind && phase==='interrupted'){
         phase='verifying';reason='interruption-cleared-unconfirmed';
       }
-      lastSample={assistantToken:sample.assistantToken||null};
+      lastSample={assistantToken:sample.assistantToken||null,
+        actionToken:sample.actionToken||null};
       if(phase+'|'+read+'|'+reason!==before)changed++;
       return out();
     }

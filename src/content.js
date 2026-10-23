@@ -20,7 +20,10 @@
   const EDITOR='#prompt-textarea,[data-testid="prompt-textarea"],[contenteditable="true"][role="textbox"]';
   const ASSISTANT='[data-message-author-role="assistant"],[data-turn="assistant"],'+
     '[data-conversation-role="assistant"],[data-chatgpt-agent-turn-start]';
-  const ACTION='button[aria-label="Copy" i],button[aria-label="Copy response" i],button[title="Copy" i],button[data-testid="copy-turn-action-button"],button[data-testid="copy-button"],[data-testid="turn-action-controls"] button,.turn-action-controls button';
+  // Only explicit terminal Copy controls certify completion. Generic action
+  // toolbars can contain feedback, speech, share or other buttons while a
+  // reply is still being generated.
+  const ACTION='button[aria-label="Copy" i],button[aria-label="Copy response" i],button[title="Copy" i],button[data-testid="copy-turn-action-button"],button[data-testid="copy-button"]';
   const EMOJI={idle:'⚪',unknown:'❔',submitted:'📤',generating:'⏳',verifying:'🔎',
     interrupted:'🔌',failed:'⚠️',limit:'🛑',finished:'✅'};
   const strip=s=>String(s||'').replace(/^(?:(?:⚪|📤|⏳|🔔|✅|🔌|⚠️|❌|🛑|🔎|❔)\s+)+/u,'');

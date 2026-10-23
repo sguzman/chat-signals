@@ -224,11 +224,18 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
         // Realistic nested reply: controls belong to the turn, not to article.
         turn.innerHTML='<article data-message-author-role="assistant">'+
           '<div class="answer-shell"></div></article>'+
-          '<div class="turn-action-controls"></div>';
+          '<div class="turn-action-controls">'+
+          '<button aria-label="Thumbs up">Like</button></div>';
         document.querySelector('main').append(turn);
       });
       await quick.waitForFunction(()=>document.documentElement.dataset.chatSignalsState==='generating');
       assert.match(await quick.title(),/^⏳ /u);
+      // Nonterminal toolbar buttons, even under .turn-action-controls, must
+      // never be mistaken for a completed response.
+      await quick.waitForTimeout(400);
+      assert.equal(await quick.evaluate(()=>
+        document.documentElement.dataset.chatSignalsState),'generating');
+      assert.equal(await quick.evaluate(()=>window.__completionChimes),0);
       // An old reply can have a freshly rebuilt Copy button. That must
       // not finish the new, still incomplete assistant turn.
       await quick.evaluate(()=>{

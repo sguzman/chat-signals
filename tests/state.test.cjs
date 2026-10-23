@@ -101,8 +101,19 @@ test('submission intent is visible before Stop, without claiming generation',()=
  f.observe(event({stop:true}));assert.equal(f.snapshot().phase,'generating');
  assert.equal(f.snapshot().epoch,1);
 });
-test('fast finished response is recognized even when Stop was never seen',()=>{
+test('new reply and terminal toolbar in the same observation cannot falsely finish',()=>{
  const f=create();f.observe(event());f.intent(event());
+ f.observe(event({actionToken:22,assistantToken:12}));
+ assert.equal(f.snapshot().phase,'generating');
+ assert.equal(f.snapshot().reason,'new-assistant-turn-visible');
+ f.observe(event({actionToken:22,assistantToken:12}));
+ assert.equal(f.snapshot().phase,'generating',
+   'unchanged toolbar is not new completion evidence');
+});
+test('new Copy action appearing after an observed reply may finish without Stop',()=>{
+ const f=create();f.observe(event());f.intent(event());
+ f.observe(event({actionToken:null,assistantToken:12}));
+ assert.equal(f.snapshot().phase,'generating');
  f.observe(event({actionToken:22,assistantToken:12}));
  assert.equal(f.snapshot().phase,'finished');
 });
@@ -164,4 +175,22 @@ test('a stale Stop during failure or limit does not manufacture new response epo
  limit.observe(sample({stop:true,noticeKind:'limit',noticeToken:60}));
  assert.equal(limit.snapshot().epoch,limitEpoch);
  assert.equal(limit.snapshot().phase,'limit');
+});
+
+test('missing baseline is not permission to treat old Copy action as completed',()=>{
+ const f=create();
+ f.observe(event({assistantToken:null,actionToken:null}));
+ f.intent(event({assistantToken:null,actionToken:null}));
+ f.observe(event({assistantToken:19,actionToken:31}));
+ assert.equal(f.snapshot().phase,'generating');
+ f.observe(event({assistantToken:19,actionToken:31}));
+ assert.equal(f.snapshot().phase,'generating');
+});
+test('uncertainty after lag cannot immediately turn into success as output starts',()=>{
+ const f=create();f.observe(event());f.intent(event());f.expireIntent();
+ assert.equal(f.snapshot().phase,'unknown');
+ f.observe(event({assistantToken:12,actionToken:22}));
+ assert.equal(f.snapshot().phase,'generating');
+ f.observe(event({assistantToken:12,actionToken:22}));
+ assert.equal(f.snapshot().phase,'generating');
 });
