@@ -7,6 +7,9 @@
   const owner={dispose};globalThis.__chatSignalsOwner=owner;
   const tracker=state.create();
   const eventAlerts=globalThis.ChatSignalsAlerts?.create();
+  // Brief recoverable connection notices should not produce desktop alerts.
+  const INTERRUPTION_GRACE_MS=5000;
+  let interruptionGraceJob=0,pendingInterruption=null;
   // Random per-document nonce: no page URL, prompt, title or user data is sent.
   const documentToken=crypto.randomUUID().replace(/-/g,'');
   const tokens=new WeakMap();
@@ -381,10 +384,11 @@
     observer.observe(main,{subtree:true,childList:true,attributes:true,
       attributeFilter:['d','aria-label','data-testid']});
   }
-  function emitEvent(previous,next){
-    if(!current||!eventAlerts)return;
-    const event=eventAlerts.transition(previous,next);
-    if(!event)return;
+  function cancelInterruptionGrace(){
+    if(interruptionGraceJob)clearTimeout(interruptionGraceJob);
+    interruptionGraceJob=0;pendingInterruption=null;
+  }
+  function deliverEvent(event,next){
     // Read/unread changes and routine transitions never create an event.
     const chime=globalThis.ChatSignalsChime;
     if(chime?.play)void chime.play(event.sound).then(outcome=>{
@@ -404,10 +408,38 @@
       }
     }
   }
+  function emitEvent(previous,next){
+    if(!current||!eventAlerts)return;
+    // A temporary connection blip is observable (🔌) but not yet alertable.
+    // Re-read the current status before delivering a warning.
+    if(pendingInterruption&&
+       (next.phase!=='interrupted'||next.epoch!==pendingInterruption.next.epoch||
+        current.key!==pendingInterruption.key))
+      cancelInterruptionGrace();
+    if(next.phase==='interrupted'&&previous.phase!=='interrupted'&&next.epoch>0){
+      if(pendingInterruption)return;
+      pendingInterruption={key:current.key,previous,next};
+      interruptionGraceJob=setTimeout(()=>{
+        interruptionGraceJob=0;
+        const pending=pendingInterruption;
+        pendingInterruption=null;
+        if(!pending||current?.key!==pending.key)return;
+        const live=tracker.snapshot();
+        if(live.phase!=='interrupted'||live.epoch!==pending.next.epoch)return;
+        if(sample().noticeKind!=='interrupted'){schedule();return;}
+        const event=eventAlerts.transition(pending.previous,live);
+        if(event)deliverEvent(event,live);
+      },INTERRUPTION_GRACE_MS);
+      return;
+    }
+    const event=eventAlerts.transition(previous,next);
+    if(event&&event.kind!=='interruption')deliverEvent(event,next);
+  }
   function reconcile(){
     queued=false;job=0;
     const next=color.identity(location.href);
     if(next?.key!==current?.key){
+      cancelInterruptionGrace();
       current=next;currentHex=null;
       eventAlerts?.reset(next?.key||null);
       previousState=-1;tracker.reset(next?.key||null);
@@ -464,6 +496,7 @@
   }
   function onVisible(){if(!document.hidden){tracker.viewed();publish();}schedule();}
   function dispose(){
+    cancelInterruptionGrace();
     observer?.disconnect();observer=null;
     faviconObserver?.disconnect();faviconObserver=null;
     if(faviconRepairJob)clearTimeout(faviconRepairJob);
