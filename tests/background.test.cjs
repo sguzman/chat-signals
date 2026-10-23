@@ -49,7 +49,9 @@ function start(){
     type:'chat-signals-complete',key,epoch,documentToken,iconUrl},origin);
   const event=(id,key,kind,epoch=1,documentToken=nonce,origin,iconUrl)=>send(id,{
     type:'chat-signals-event',event:kind,key,epoch,documentToken,iconUrl},origin);
-  return {register,complete,event,remove:id=>removed(id),read:()=>session,
+  return {register,complete,event,remove:id=>{
+      tabWindows.delete(id);tabUrls.delete(id);removed(id);
+    },read:()=>session,
     notifications:()=>notifications,
     setWindow:(tabId,windowId)=>tabWindows.set(tabId,windowId),
     setUrl:(tabId,url)=>tabUrls.set(tabId,url),
