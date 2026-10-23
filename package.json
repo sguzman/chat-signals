@@ -1,6 +1,6 @@
 {
   "name": "chat-signals",
-  "version": "0.3.11",
+  "version": "0.3.12",
   "private": true,
   "description": "ChatGPT tab state evidence and color identity",
   "scripts": {
