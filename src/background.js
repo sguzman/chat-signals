@@ -202,9 +202,10 @@
   chrome.tabs.onRemoved.addListener(tabId=>{
     serialize(async()=>{
       const slots=await get();
-      if(!Object.prototype.hasOwnProperty.call(slots,String(tabId)))return;
-      delete slots[String(tabId)];
-      await put(slots);
+      if(Object.prototype.hasOwnProperty.call(slots,String(tabId))){
+        delete slots[String(tabId)];
+        await put(slots);
+      }
       const ledger=await getStateLedger();
       if(Object.prototype.hasOwnProperty.call(ledger,String(tabId))){
         delete ledger[String(tabId)];
