@@ -72,3 +72,7 @@ The exact visible status `Error in input stream` is direct negative UI evidence 
 ## Persistent interruption alert grace (v0.3.9)
 
 A direct UI observation of the exact connection-interruption banner still immediately enters `interrupted` and displays 🔌. The notification and chime are separate: they are deferred for five seconds, then delivered only when the same conversation and epoch still show an interruption and the visible notice remains present. If it recovers, completes or navigates elsewhere before confirmation, no warning is emitted and no warning deduplication slot is consumed; a subsequent persistent interruption in the same response epoch may warn once. Errors and limits remain immediate. This is a UX alert policy, not a claim that a short interruption did not actually happen.
+
+## Rich response terminal scope (v0.3.11)
+
+The observer still uses only the latest assistant turn's explicit Copy control to confirm completion and never reads message bodies. For a turn with thousands of nested elements, a short reverse walk might encounter the footer but never reach the assistant marker. When a traversed element is inside a conversation-turn wrapper, the observer now checks that wrapper for the assistant marker and treats the wrapper as the terminal-control scope. User-only wrappers are skipped. Without a matching, current reply Copy control, Stop disappearance still produces `verifying` rather than speculative `finished`. Keep stale earlier Copy controls and incomplete active turns as negative counterexamples.
