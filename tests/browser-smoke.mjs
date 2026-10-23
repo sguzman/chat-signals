@@ -421,6 +421,66 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
           [expectedSound],'no duplicate alert from incidental DOM mutation');
       }finally{await diagnostic.close();}
     }
+    // A short, unlabelled error banner beside Retry is failure evidence,
+    // even when the new assistant turn also receives a Copy action.
+    const inputError=await context.newPage();
+    try{
+      await inputError.route('https://chatgpt.com/**',route=>route.fulfill({
+        contentType:'text/html',body:html,status:200
+      }));
+      await inputError.goto('https://chatgpt.com/c/synthetic-input-stream-error');
+      for(const script of scripts)await inputError.addScriptTag({content:script});
+      await inputError.evaluate(()=>{
+        window.__sounds=[];
+        window.ChatSignalsChime={
+          unlock:async()=> 'ready',
+          play:async kind=>{window.__sounds.push(kind);return 'scheduled';}
+        };
+      });
+      await inputError.waitForFunction(()=>
+        document.documentElement.dataset.chatSignalsState==='idle');
+      // Identical words inside a chat reply must not count as a status.
+      await inputError.evaluate(()=>{
+        const old=document.querySelector('[data-message-author-role="assistant"]');
+        const text=document.createElement('p');
+        text.textContent='Error in input stream';old.append(text);
+      });
+      await inputError.waitForTimeout(350);
+      assert.equal(await inputError.evaluate(()=>
+        document.documentElement.dataset.chatSignalsState),'idle');
+      await inputError.evaluate(()=>{
+        document.querySelector('#prompt-textarea').dispatchEvent(
+          new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
+        const stop=document.createElement('button');
+        stop.dataset.testid='fruitjuice-stop-button';
+        document.querySelector('form').append(stop);
+      });
+      await inputError.waitForFunction(()=>
+        document.documentElement.dataset.chatSignalsState==='generating');
+      await inputError.evaluate(()=>{
+        document.querySelector('[data-testid="fruitjuice-stop-button"]').remove();
+        const fresh=document.createElement('article');
+        fresh.dataset.testid='conversation-turn-new';
+        fresh.innerHTML='<div data-message-author-role="assistant">'+
+          '<button aria-label="Copy">Copy</button></div>';
+        document.querySelector('main').append(fresh);
+        const banner=document.createElement('div');
+        banner.dataset.syntheticStreamError='1';
+        banner.innerHTML='<span>Error in input stream</span><button>Retry</button>';
+        document.querySelector('main').append(banner);
+      });
+      await inputError.waitForFunction(()=>
+        document.documentElement.dataset.chatSignalsState==='failed');
+      assert.match(await inputError.title(),/^⚠️ /u);
+      assert.equal(await inputError.evaluate(()=>
+        document.documentElement.dataset.chatSignalsReason),
+        'visible-input-stream-error');
+      await inputError.waitForFunction(()=>window.__sounds.length===1);
+      assert.deepEqual(await inputError.evaluate(()=>window.__sounds),['error']);
+      await inputError.waitForTimeout(350);
+      assert.deepEqual(await inputError.evaluate(()=>window.__sounds),['error'],
+        'same visible stream error must not repeat the failure alert');
+    }finally{await inputError.close();}
     // The live ChatGPT interruption banner can be an ordinary div, without
     // role=alert or a test id. Appearance, reappearance, and recovery must
     // all be observable, with a single warning sound per attempt.
