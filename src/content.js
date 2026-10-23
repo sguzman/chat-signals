@@ -65,6 +65,10 @@
   }
   const CONNECTION_INTERRUPTED=
     /^connection interrupted[.!]? waiting for the complete answer[.!]?$/i;
+  // Exact, visible ChatGPT response-status text, never arbitrary red UI.
+  const INPUT_STREAM_ERROR=/^error in input stream[.!]?$/i;
+  const knownPlainNotice=text=>
+    CONNECTION_INTERRUPTED.test(text)||INPUT_STREAM_ERROR.test(text);
   const STATUS_SELECTOR='[role="alert"],[role="status"],'+
     '[data-testid="conversation-error"],[data-testid="toast"]';
   function classifyNotice(text){
@@ -75,6 +79,7 @@
       return 'conversation_load_failed';
     if(/(?:this response couldn.t load)/.test(normalized))return 'response_load_failed';
     if(CONNECTION_INTERRUPTED.test(normalized))return 'interrupted';
+    if(INPUT_STREAM_ERROR.test(normalized))return 'input_stream_error';
     if(/^(?:network error|something went wrong|message delivery timed out|failed to generate response)[.!]?$/.test(normalized))
       return 'error';
     return null;
@@ -94,9 +99,9 @@
       const kind=classifyNotice(node.textContent);
       if(kind)return {kind,id:token(node)};
     }
-    // The connection interruption banner may have no alert role or test id.
-    // Inspect a bounded set of small leaf-like elements, never message bodies,
-    // matching *only* the exact known status phrase. No text is persisted.
+    // Connection/stream-error banners may have no alert role or test id.
+    // Inspect bounded small status leaves outside message bodies, matching
+    // only the exact known phrases. No message content is persisted.
     const main=document.querySelector('main');
     if(!main)return null;
     const items=main.querySelectorAll('div,span,p');
@@ -107,9 +112,12 @@
       inspected++;
       if(!present(el))continue;
       const length=el.textContent.length;
-      if(length<45||length>100)continue;
-      if(CONNECTION_INTERRUPTED.test(el.textContent.trim().replace(/\s+/g,' ')))
+      if(length<15||length>100)continue;
+      const label=el.textContent.trim().replace(/\s+/g,' ');
+      if(CONNECTION_INTERRUPTED.test(label))
         return {kind:'interrupted',id:token(el)};
+      if(INPUT_STREAM_ERROR.test(label))
+        return {kind:'input_stream_error',id:token(el)};
     }
     return null;
   }
@@ -338,12 +346,12 @@
             // Detect a status inserted as plain text without scanning
             // arbitrary streamed response text.
             if(safeBanner(node.parentElement)&&
-               CONNECTION_INTERRUPTED.test(node.textContent.trim()))return true;
+               knownPlainNotice(node.textContent.trim()))return true;
             continue;
           }
           if(node.nodeType!==1)continue;
           if(safeBanner(node)&&node.textContent.length<=100&&
-             CONNECTION_INTERRUPTED.test(node.textContent.trim()))return true;
+             knownPlainNotice(node.textContent.trim()))return true;
           if(node.matches?.(STRUCTURAL))return true;
           if(!node.firstElementChild)continue;
           const walker=document.createTreeWalker(node,NodeFilter.SHOW_ELEMENT);
@@ -351,7 +359,7 @@
           while((child=walker.nextNode())){
             if(++count>80)return true; // do not traverse huge inserted subtrees
             if(safeBanner(child)&&child.textContent.length<=100&&
-               CONNECTION_INTERRUPTED.test(child.textContent.trim()))return true;
+               knownPlainNotice(child.textContent.trim()))return true;
             if(child.matches?.(STRUCTURAL))return true;
           }
         }
@@ -364,8 +372,8 @@
     observer?.disconnect();observer=null;observedMain=main;
     if(!main)return;
     observer=new MutationObserver(records=>{
-      // A plain-text interruption banner has no semantic selector. A removal
-      // must be observed too, so recovered streams can leave 🔌 promptly.
+      // Plain-text status banners have no semantic selector. A removal of an
+      // interruption must be observed so recovery can leave 🔌 promptly.
       if((tracker.snapshot().phase==='interrupted'&&
           records.some(record=>record.removedNodes.length>0))||
          relevantChanges(records))schedule();
