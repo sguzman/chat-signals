@@ -6,7 +6,7 @@ const color=require('../src/color.js');
 
 function start(){
   let message,removed,clicked,session={},notifications=[],activations=[];
-  let tabWindows=new Map();
+  let tabWindows=new Map(),tabUrls=new Map();
   const nonce='0123456789abcdef0123456789abcdef';
   const chrome={
     runtime:{lastError:null,getURL:p=>'moz-extension://synthetic/'+p,
@@ -14,7 +14,8 @@ function start(){
     tabs:{
       onRemoved:{addListener:fn=>{removed=fn;}},
       get:(id,callback)=>callback(tabWindows.has(id)?
-        {id,windowId:tabWindows.get(id)}:undefined),
+        {id,windowId:tabWindows.get(id),
+          url:tabUrls.get(id)||'https://chatgpt.com/c/synthetic-chat'}:undefined),
       update:(id,options,callback)=>{
         activations.push({kind:'tab',id,options});callback();
       }
@@ -51,6 +52,8 @@ function start(){
   return {register,complete,event,remove:id=>removed(id),read:()=>session,
     notifications:()=>notifications,
     setWindow:(tabId,windowId)=>tabWindows.set(tabId,windowId),
+    setUrl:(tabId,url)=>tabUrls.set(tabId,url),
+    clickImmediate:id=>clicked(id),
     click:async id=>{clicked(id);await new Promise(resolve=>setImmediate(resolve));},
     activations:()=>activations};
 }
@@ -94,6 +97,7 @@ test('desktop completion notification fires once and never contains chat text',a
  const first=await w.complete(7,key,1);
  assert.equal(first.created,true);
  assert.equal(w.notifications().length,1);
+ assert.equal(w.notifications()[0].options.isClickable,true);
  assert.equal(w.notifications()[0].options.title,'Chat Signals - Success');
  assert.equal(w.notifications()[0].options.message,'Response finished.');
  assert.equal(w.notifications()[0].options.iconUrl,'moz-extension://synthetic/icons/completion.png');
@@ -199,5 +203,22 @@ test('notification click ignores unknown, removed, or nonextension notifications
  assert.equal(w.activations().length,0);
  w.remove(52);await w.register(53,color.hash('chat:synthetic-extra'));
  await w.click('chat-signals-tab-52');
+ assert.equal(w.activations().length,0);
+});
+
+test('click activation is dispatched synchronously without storage or work-queue waits',async()=>{
+ const w=start(),key=color.hash('chat:synthetic-chat');
+ w.setWindow(60,9);await w.register(60,key);await w.event(60,key,'completion');
+ w.clickImmediate('chat-signals-tab-60');
+ assert.deepEqual(JSON.parse(JSON.stringify(w.activations())),[
+   {kind:'tab',id:60,options:{active:true}},
+   {kind:'window',id:9,options:{focused:true}}
+ ],'requests begin during click handling, not after any awaited storage operation');
+});
+test('click does not activate a tab that navigated away from chatgpt.com',async()=>{
+ const w=start(),key=color.hash('chat:synthetic-chat');
+ w.setWindow(61,10);await w.register(61,key);await w.event(61,key,'completion');
+ w.setUrl(61,'https://example.org/');
+ w.clickImmediate('chat-signals-tab-61');
  assert.equal(w.activations().length,0);
 });

@@ -27,8 +27,8 @@ Firefox Release requires a Mozilla-signed add-on. No listing in the public add-o
 
 1. Update local checkout of `main`: `git pull --ff-only`.
 2. From the repo root, package **only required extension files**, preserving directory paths:
-   `bsdtar -a -cf chat-signals-0.3.4.zip manifest.json src icons`.
-   Verify the entries with `bsdtar -tf chat-signals-0.3.4.zip`: `manifest.json` must be at the archive root and JavaScript entries must retain their `src/` prefixes (including `src/background.js` and `src/content.js`). Do **not** use `python3 -m zipfile -c` for this archive: it flattens paths and causes missing-script errors. `bsdtar` is supplied by Arch's `libarchive` package and retains the `src/` directory.
+   `bsdtar -a -cf chat-signals-0.3.5.zip manifest.json src icons`.
+   Verify the entries with `bsdtar -tf chat-signals-0.3.5.zip`: `manifest.json` must be at the archive root and JavaScript entries must retain their `src/` prefixes (including `src/background.js` and `src/content.js`). Do **not** use `python3 -m zipfile -c` for this archive: it flattens paths and causes missing-script errors. `bsdtar` is supplied by Arch's `libarchive` package and retains the `src/` directory.
 3. Sign into [Mozilla Add-ons Developer Hub](https://addons.mozilla.org/developers/) and submit a new add-on. Select **On your own** (unlisted / self-distribution), not **On this site**. Upload the generated ZIP and follow the validation/signing steps.
 4. When signing is complete, download the **signed XPI** from the add-on's version page in the Developer Hub. **Do not** rename the unsigned ZIP to XPI and expect Firefox Release to accept it.
 5. In the Firefox profile where Chat Signals will live, open `about:addons`, click the gear icon, select **Install Add-on From File**, select the signed XPI and accept permissions. Remove the temporary Chat Signals instance first if installing into the same spare profile.
@@ -88,3 +88,7 @@ Develop directly on `main`. Do not bulk-inject into existing tabs or refresh the
 ### v0.3.4 — Notification severity visibility
 
 The OS notification API exposes basic notifications, not native success/warning/error urgency levels. To make the existing event categories distinguishable, the extension now overlays a small, high-contrast **check / exclamation / cross** on the *notification-only* 32px conversation-color icon. Limit reached remains a **warning**, following the existing event classification. No changes to tab favicon/color allocation, notification deduplication, sounds, event-state transitions, or required permissions. A focused browser test asserts that every event receives an emblem while the tab favicon stays unchanged.
+
+### v0.3.5 — Direct notification click activation
+
+When a notification is clicked, Chat Signals dispatches `tabs.update({active:true})` and `windows.update({focused:true})` for the existing originating tab as soon as the browser supplies that tab's window ID. Unlike v0.3.4, this path no longer waits for the serialized storage chain, which could delay the focus request beyond Wayland's click activation window. `isClickable:true` is explicit in the notification options. The handler ignores unrecognized IDs, closed tabs, and tabs known to have navigated off chatgpt.com; it never creates a new tab or reads chat content. This is an extension-side mitigation, **not a guarantee** that the Linux notification daemon forwards a click event or Hyprland honors cross-workspace activation. If live clicks still fail, check the active Mako click binding and whether eosbox has loaded its Firefox Developer Edition `focus_on_activate` rule rather than broadening permissions or adding unrelated functionality.

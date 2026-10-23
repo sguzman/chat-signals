@@ -62,7 +62,7 @@
       const icon=/^data:image\/png;base64,[A-Za-z0-9+/=]{40,8192}$/.test(iconUrl||'')?
         iconUrl:chrome.runtime.getURL('icons/completion.png');
       const options={type:'basic',title:'Chat Signals - '+detail.category,
-        message:detail.message,iconUrl:icon};
+        message:detail.message,iconUrl:icon,isClickable:true};
       return new Promise(resolve=>{
         try{
           chrome.notifications.create('chat-signals-tab-'+tabId,options,()=>{
@@ -92,26 +92,25 @@
     }
     return false;
   });
-  // A notification click is an explicit request to return to that exact
-  // conversation tab. Merely activating a tab does not focus its window.
-  // Keep both operations scoped to the existing tab; never open another.
+  // Dispatch activation directly from the click event. Waiting on the
+  // storage serialization chain can outlive Wayland's user-activation token.
+  // Extension notification IDs are private to this extension and contain
+  // only the originating tab ID. Never open a new tab or touch chat content.
   chrome.notifications?.onClicked?.addListener(notificationId=>{
     const match=/^chat-signals-tab-(\d+)$/.exec(notificationId);
     if(!match)return;
     const tabId=Number(match[1]);
-    if(!Number.isSafeInteger(tabId))return;
-    serialize(async()=>{
-      const slots=await get();
-      if(!slots[String(tabId)])return;
-      if(!chrome.tabs?.get||!chrome.tabs?.update||!chrome.windows?.update)return;
-      chrome.tabs.get(tabId,tab=>{
-        if(chrome.runtime.lastError||!tab||!Number.isInteger(tab.windowId))return;
-        chrome.tabs.update(tabId,{active:true},()=>{
-          if(chrome.runtime.lastError)return;
-          chrome.windows.update(tab.windowId,{focused:true},()=>void chrome.runtime.lastError);
-        });
-      });
-    }).catch(()=>{});
+    if(!Number.isSafeInteger(tabId)||
+       !chrome.tabs?.get||!chrome.tabs?.update||!chrome.windows?.update)return;
+    chrome.tabs.get(tabId,tab=>{
+      if(chrome.runtime.lastError||!tab||!Number.isInteger(tab.windowId))return;
+      // Ignore a tab that has since navigated away from the conversation.
+      if(typeof tab.url==='string'&&!/^https:\/\/chatgpt\.com\//.test(tab.url))return;
+      // Schedule both requests together: no storage reads or awaited callbacks
+      // between the notification click and window activation.
+      chrome.tabs.update(tabId,{active:true},()=>void chrome.runtime.lastError);
+      chrome.windows.update(tab.windowId,{focused:true},()=>void chrome.runtime.lastError);
+    });
   });
   chrome.tabs.onRemoved.addListener(tabId=>{
     serialize(async()=>{
