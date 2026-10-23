@@ -5,6 +5,10 @@
     importScripts('color.js');
   const colors=root.ChatSignalsColor;
   const KEY='chatSignalsSessionAllocationsV1';
+  const COLOR_LEDGER_KEY='chatSignalsColorLedgerV1';
+  // Remember recently used conversation colors across browser/extension restarts.
+  // The entries contain only hashed identities and palette swatches.
+  const MAX_REMEMBERED_COLORS=2048;
   const EVENT_INFO=Object.freeze({
     completion:Object.freeze({category:'Success',message:'Response finished.'}),
     interruption:Object.freeze({category:'Warning',message:'Connection interrupted.'}),
@@ -25,15 +29,45 @@
     if(!area)return Promise.resolve();
     return new Promise(resolve=>area.set({[KEY]:data},()=>resolve()));
   }
+  const persistentArea=chrome.storage?.local;
+  function getColorLedger(){
+    if(!persistentArea)return Promise.resolve({});
+    return new Promise(resolve=>persistentArea.get(COLOR_LEDGER_KEY,data=>{
+      if(chrome.runtime.lastError){resolve({});return;}
+      const ledger=data?.[COLOR_LEDGER_KEY];
+      resolve(ledger&&typeof ledger==='object'&&!Array.isArray(ledger)?ledger:{});
+    }));
+  }
+  function putColorLedger(ledger){
+    if(!persistentArea)return Promise.resolve();
+    return new Promise(resolve=>persistentArea.set({[COLOR_LEDGER_KEY]:ledger},()=>{
+      resolve();
+    }));
+  }
   function serialize(work){
     const next=chain.then(work,work);chain=next.catch(()=>{});
     return next;
   }
   async function register(tabId,key,documentToken){
     const slots=await get();
+    const ledger=await getColorLedger();
     const previous=Object.values(slots).find(x=>x.key===key);
     const occupied=[...new Set(Object.values(slots).filter(x=>x.key!==key).map(x=>x.hex))];
-    const hex=previous?.hex||colors.choose(key,occupied);
+    const saved=ledger[key];
+    const remembered=colors.palette.some(x=>x.hex===saved)?saved:null;
+    const hex=remembered||
+      (colors.palette.some(x=>x.hex===previous?.hex)?previous.hex:null)||
+      colors.choose(key,occupied);
+    // First assignment prioritizes colors apart from active chats; once
+    // chosen, a given conversation keeps its swatch across reloads.
+    // Bounded storage evicts the oldest identities only when full.
+    if(ledger[key]!==hex){
+      delete ledger[key];
+      ledger[key]=hex;
+      while(Object.keys(ledger).length>MAX_REMEMBERED_COLORS)
+        delete ledger[Object.keys(ledger)[0]];
+      await putColorLedger(ledger);
+    }
     const prior=slots[String(tabId)];
     const sameDocument=prior?.key===key&&prior.documentToken===documentToken;
     const delivered=sameDocument?prior.delivered||0:0;
