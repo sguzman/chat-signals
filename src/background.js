@@ -6,6 +6,11 @@
   const colors=root.ChatSignalsColor;
   const KEY='chatSignalsSessionAllocationsV1';
   const COLOR_LEDGER_KEY='chatSignalsColorLedgerV1';
+  const STATE_LEDGER_KEY='chatSignalsStateLedgerV1';
+  const STATE_TTL_MS=14*24*60*60*1000;
+  const MAX_REMEMBERED_STATES=512;
+  const PHASES=new Set(['idle','submitted','generating','verifying',
+    'finished','interrupted','failed','limit','unknown']);
   // Remember recently used conversation colors across browser/extension restarts.
   // The entries contain only hashed identities and palette swatches.
   const MAX_REMEMBERED_COLORS=2048;
@@ -44,6 +49,23 @@
       resolve();
     }));
   }
+  function getStateLedger(){
+    if(!persistentArea)return Promise.resolve({});
+    return new Promise(resolve=>persistentArea.get(STATE_LEDGER_KEY,data=>{
+      if(chrome.runtime.lastError){resolve({});return;}
+      const ledger=data?.[STATE_LEDGER_KEY];
+      resolve(ledger&&typeof ledger==='object'&&!Array.isArray(ledger)?ledger:{});
+    }));
+  }
+  function putStateLedger(ledger){
+    if(!persistentArea)return Promise.resolve();
+    return new Promise(resolve=>persistentArea.set({[STATE_LEDGER_KEY]:ledger},()=>resolve()));
+  }
+  function validState(value){
+    return value&&typeof value==='object'&&PHASES.has(value.phase)&&
+      (value.read==='unread'||value.read==='viewed')&&
+      Number.isSafeInteger(value.epoch)&&value.epoch>=0;
+  }
   function serialize(work){
     const next=chain.then(work,work);chain=next.catch(()=>{});
     return next;
@@ -69,12 +91,38 @@
       await putColorLedger(ledger);
     }
     const prior=slots[String(tabId)];
+    const stored=(await getStateLedger())[String(tabId)];
+    const recent=stored?.key===key&&validState(stored.state)&&
+      Number.isFinite(stored.at)&&stored.at<=Date.now()&&
+      Date.now()-stored.at<STATE_TTL_MS;
+    const restored=recent?stored.state:null;
     const sameDocument=prior?.key===key&&prior.documentToken===documentToken;
     const delivered=sameDocument?prior.delivered||0:0;
     const deliveredEvents=sameDocument?prior.deliveredEvents||{}:{};
     slots[String(tabId)]={key,hex,documentToken,delivered,deliveredEvents};
     await put(slots);
-    return {hex};
+    return {hex,restored};
+  }
+  async function saveState(tabId,key,documentToken,state){
+    const slots=await get(),slot=slots[String(tabId)];
+    if(!slot||slot.key!==key||slot.documentToken!==documentToken)
+      return {saved:false};
+    if(!validState(state))return {saved:false};
+    const ledger=await getStateLedger(),now=Date.now();
+    ledger[String(tabId)]={key,at:now,
+      state:{phase:state.phase,read:state.read,epoch:state.epoch}};
+    // A bounded last-known-state ledger. It never stores URLs, titles,
+    // response text or weak DOM tokens.
+    for(const [id,entry] of Object.entries(ledger))
+      if(!entry||!Number.isFinite(entry.at)||entry.at>now||
+         now-entry.at>=STATE_TTL_MS)delete ledger[id];
+    while(Object.keys(ledger).length>MAX_REMEMBERED_STATES){
+      const oldest=Object.keys(ledger).reduce((a,b)=>
+        ledger[a].at<=ledger[b].at?a:b);
+      delete ledger[oldest];
+    }
+    await putStateLedger(ledger);
+    return {saved:true};
   }
   function notify(tabId,key,documentToken,epoch,kind,iconUrl){
     return serialize(async()=>{
@@ -117,6 +165,11 @@
         .then(reply,()=>reply({hex:null}));
       return true;
     }
+    if(request.type==='chat-signals-state'){
+      serialize(()=>saveState(tabId,request.key,request.documentToken,request.state))
+        .then(reply,()=>reply({saved:false}));
+      return true;
+    }
     const kind=request.type==='chat-signals-complete'?'completion':
       request.type==='chat-signals-event'?request.event:null;
     if(EVENT_INFO[kind]&&Number.isSafeInteger(request.epoch)&&request.epoch>=1){
@@ -152,6 +205,11 @@
       if(!Object.prototype.hasOwnProperty.call(slots,String(tabId)))return;
       delete slots[String(tabId)];
       await put(slots);
+      const ledger=await getStateLedger();
+      if(Object.prototype.hasOwnProperty.call(ledger,String(tabId))){
+        delete ledger[String(tabId)];
+        await putStateLedger(ledger);
+      }
     }).catch(()=>{});
   });
 })(typeof globalThis!=='undefined'?globalThis:this);
