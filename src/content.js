@@ -17,7 +17,7 @@
   let iconImage=null,faviconRepairWindow=0,faviconRepairCount=0,
     faviconObserver=null,faviconRepairJob=0,faviconRetryJob=0;
   let tokenCount=0,current=null,currentHex=null,observer=null,observedMain=null,
-    queued=false,job=0,clickSettleJob=0,intentExpiryJob=0,lastIntentAt=-1000,routeNonce=0,iconLink=null,previousState=-1,lastProbe=0,
+    queued=false,job=0,fastQueued=false,disposed=false,clickSettleJob=0,intentExpiryJob=0,lastIntentAt=-1000,routeNonce=0,iconLink=null,previousState=-1,lastProbe=0,
     titleObserver=null,watchedTitle=null,titleWriteCount=0,titleWriteWindow=0;
   // Oct 2026 ChatGPT composer variant renders Stop as an unlabeled button
   // carrying this square path (distinct from voice/Send). Require the exact
@@ -32,6 +32,7 @@
   const EDITOR='#prompt-textarea,[data-testid="prompt-textarea"],[contenteditable="true"][role="textbox"]';
   const ASSISTANT='[data-message-author-role="assistant"],[data-turn="assistant"],'+
     '[data-conversation-role="assistant"],[data-chatgpt-agent-turn-start]';
+  const TURN='[data-testid^="conversation-turn"],[data-turn-key]';
   // Only explicit terminal Copy controls certify completion. Generic action
   // toolbars can contain feedback, speech, share or other buttons while a
   // reply is still being generated.
@@ -53,7 +54,6 @@
     if(!last)return null;
     while(last.lastElementChild)last=last.lastElementChild;
     walker.currentNode=last;
-    const TURN='[data-testid^="conversation-turn"],[data-turn-key]';
     let checkedTurn=null;
     for(let i=0;i<768;i++){
       node=walker.currentNode;
@@ -139,7 +139,10 @@
     const notice=visibleNotice();
     return {key:current?.key||null,stop:[...document.querySelectorAll(STOP)]
       .slice(0,4).some(present),assistantToken:token(last),
-      actionToken:present(action)?token(action):null,
+      // A completed reply's Copy button may be mounted but CSS-hidden
+      // until the tab is focused/hovered. DOM ownership, not layout
+      // visibility, establishes which reply owns the terminal action.
+      actionToken:action?.isConnected?token(action):null,
       noticeKind:notice?.kind||null,noticeToken:notice?.id||null,hidden:document.hidden};
   }
   function drawIcon(hex,kind,alertKind=null){
@@ -387,11 +390,71 @@
     }
     return false;
   }
+  function isComposerControlTarget(node){
+    if(node?.nodeType!==1)return false;
+    const form=node.closest?.('form');
+    return Boolean(form?.querySelector(EDITOR)&&
+      !node.closest(EDITOR));
+  }
+  function isReplyActionArea(node){
+    if(node?.nodeType!==1)return false;
+    // Watch only controls/footers outside reply text. A message-body
+    // mutation, even in a very long response, is not completion evidence.
+    return Boolean(node.closest?.(TURN)&&
+      !node.closest('[data-message-author-role],.markdown,.prose,[contenteditable="true"]'));
+  }
+  function terminalChanges(records){
+    const phase=tracker.snapshot().phase;
+    if(!['submitted','generating','verifying','interrupted'].includes(phase))
+      return false;
+    for(const record of records){
+      const target=record.target;
+      if(record.type==='childList'){
+        // Removed Stop controls no longer match composer-scoped :has()
+        // selectors after detachment. The still-connected parent does.
+        if(isComposerControlTarget(target)||isReplyActionArea(target))
+          return true;
+        // Some layouts put the Copy button inside the assistant article.
+        if(target.nodeType===1&&target.closest?.(ASSISTANT)&&
+           [...record.addedNodes,...record.removedNodes].some(node=>
+             node.nodeType===1&&
+             (node.matches?.(ACTION)||node.querySelector?.(ACTION))))
+          return true;
+      }else if(record.type==='attributes'&&target.nodeType===1){
+        if(isComposerControlTarget(target)&&
+           ['button','svg','path'].includes(target.localName))return true;
+        // Copy can be enabled or relabeled in place without adding nodes.
+        if((isReplyActionArea(target)||target.closest?.(ASSISTANT))&&
+           (target.localName==='button'||target.getAttribute?.('role')==='button'))
+          return true;
+      }
+    }
+    return false;
+  }
+  function scheduleTerminal(){
+    // DOM mutations themselves are delivered as microtasks. A browser may
+    // heavily throttle hidden-tab setTimeout callbacks; don't put terminal
+    // state recognition behind the ordinary 250ms timer.
+    if(fastQueued||disposed)return;
+    fastQueued=true;
+    queueMicrotask(()=>{
+      fastQueued=false;
+      if(disposed)return;
+      if(job)clearTimeout(job);
+      queued=false;job=0;
+      lastProbe=performance.now();
+      reconcile();
+    });
+  }
   function bindMain(main){
     if(main===observedMain)return;
     observer?.disconnect();observer=null;observedMain=main;
     if(!main)return;
     observer=new MutationObserver(records=>{
+      if(terminalChanges(records)){
+        scheduleTerminal();
+        return;
+      }
       // Plain-text status banners have no semantic selector. A removal of an
       // interruption must be observed so recovery can leave 🔌 promptly.
       if((tracker.snapshot().phase==='interrupted'&&
@@ -399,7 +462,8 @@
          relevantChanges(records))schedule();
     });
     observer.observe(main,{subtree:true,childList:true,attributes:true,
-      attributeFilter:['d','aria-label','data-testid']});
+      attributeFilter:['d','aria-label','data-testid','title','class','style',
+        'hidden','disabled','aria-hidden']});
   }
   function cancelInterruptionGrace(){
     if(interruptionGraceJob)clearTimeout(interruptionGraceJob);
@@ -513,6 +577,7 @@
   }
   function onVisible(){if(!document.hidden){tracker.viewed();publish();}schedule();}
   function dispose(){
+    disposed=true;
     cancelInterruptionGrace();
     observer?.disconnect();observer=null;
     faviconObserver?.disconnect();faviconObserver=null;
