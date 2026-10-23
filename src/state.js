@@ -27,7 +27,8 @@
       // A historical snapshot is presentation evidence, not live transport
       // evidence. Caller must validate the identity and check live controls.
       if(!key||!sample||sample.key!==key||epoch!==0||
-         phase!=='idle'||!saved||typeof saved!=='object')return out();
+         phase!=='idle'||sample.stop||sample.noticeKind||
+         !saved||typeof saved!=='object')return out();
       if(!phases.has(saved.phase)||saved.phase==='unknown'||
          saved.phase==='idle'||!Number.isSafeInteger(saved.epoch)||
          saved.epoch<0)return out();
