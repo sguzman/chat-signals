@@ -217,3 +217,39 @@ test('an interrupted response can resume generation when Stop returns',()=>{
  f.observe(event({noticeKind:null,stop:true}));
  assert.equal(f.snapshot().phase,'generating');
 });
+
+test('input-stream failure outranks simultaneous Copy completion and unread state',()=>{
+ const f=create();f.observe(event());f.intent(event());
+ f.observe(event({stop:true,assistantToken:12,actionToken:null}));
+ f.observe(event({assistantToken:12,actionToken:22,hidden:true,
+   noticeKind:'input_stream_error',noticeToken:87}));
+ assert.equal(f.snapshot().phase,'failed');
+ assert.equal(f.snapshot().read,'viewed');
+ assert.equal(f.snapshot().reason,'visible-input-stream-error');
+ const changed=f.snapshot().changed;
+ f.observe(event({assistantToken:12,actionToken:22,hidden:true,
+   noticeKind:'input_stream_error',noticeToken:87}));
+ assert.equal(f.snapshot().changed,changed,'same banner must be idempotent');
+});
+test('late input-stream error corrects an inferred unread completion',()=>{
+ const f=create();f.observe(event());f.intent(event());
+ f.observe(event({stop:true,assistantToken:12,actionToken:null}));
+ f.observe(event({assistantToken:12,actionToken:22,hidden:true}));
+ assert.equal(f.snapshot().phase,'finished');
+ assert.equal(f.snapshot().read,'unread');
+ f.observe(event({assistantToken:12,actionToken:22,hidden:true,
+   noticeKind:'input_stream_error',noticeToken:88}));
+ assert.equal(f.snapshot().phase,'failed');
+ assert.equal(f.snapshot().read,'viewed');
+});
+test('an older input-stream banner cannot poison a later successful Retry',()=>{
+ const f=create();f.observe(event({noticeKind:'input_stream_error',noticeToken:42}));
+ assert.equal(f.snapshot().phase,'failed');
+ assert.equal(f.snapshot().epoch,0);
+ f.intent(event({noticeKind:'input_stream_error',noticeToken:42}));
+ f.observe(event({stop:true,noticeKind:'input_stream_error',noticeToken:42}));
+ assert.equal(f.snapshot().phase,'generating');
+ f.observe(event({assistantToken:12,actionToken:22,
+   noticeKind:'input_stream_error',noticeToken:42}));
+ assert.equal(f.snapshot().phase,'finished');
+});
