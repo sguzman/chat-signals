@@ -27,8 +27,8 @@ Firefox Release requires a Mozilla-signed add-on. No listing in the public add-o
 
 1. Update local checkout of `main`: `git pull --ff-only`.
 2. From the repo root, package **only required extension files**, preserving directory paths:
-   `bsdtar -a -cf chat-signals-0.3.3.zip manifest.json src icons`.
-   Verify the entries with `bsdtar -tf chat-signals-0.3.3.zip`: `manifest.json` must be at the archive root and JavaScript entries must retain their `src/` prefixes (including `src/background.js` and `src/content.js`). Do **not** use `python3 -m zipfile -c` for this archive: it flattens paths and causes missing-script errors. `bsdtar` is supplied by Arch's `libarchive` package and retains the `src/` directory.
+   `bsdtar -a -cf chat-signals-0.3.4.zip manifest.json src icons`.
+   Verify the entries with `bsdtar -tf chat-signals-0.3.4.zip`: `manifest.json` must be at the archive root and JavaScript entries must retain their `src/` prefixes (including `src/background.js` and `src/content.js`). Do **not** use `python3 -m zipfile -c` for this archive: it flattens paths and causes missing-script errors. `bsdtar` is supplied by Arch's `libarchive` package and retains the `src/` directory.
 3. Sign into [Mozilla Add-ons Developer Hub](https://addons.mozilla.org/developers/) and submit a new add-on. Select **On your own** (unlisted / self-distribution), not **On this site**. Upload the generated ZIP and follow the validation/signing steps.
 4. When signing is complete, download the **signed XPI** from the add-on's version page in the Developer Hub. **Do not** rename the unsigned ZIP to XPI and expect Firefox Release to accept it.
 5. In the Firefox profile where Chat Signals will live, open `about:addons`, click the gear icon, select **Install Add-on From File**, select the signed XPI and accept permissions. Remove the temporary Chat Signals instance first if installing into the same spare profile.
@@ -46,7 +46,7 @@ Unlisted/sideloaded releases **do not automatically update** from this GitHub re
 
 Disable the historical ChatGPT Tab Signal extension before trying Chat Signals in the same browser profile. Running both would create competing title and favicon writers. Already-open ChatGPT tabs are not automatically updated or reloaded after installing/reloading Chat Signals; open a new chat page for an unambiguous test.
 
-Chat Signals requests desktop notifications using Firefox/Chromium's `notifications` permission and plays short Web Audio cues on confirmed events, in foreground and background tabs. A notification uses the **same color identity icon as its conversation** (or a bundled fallback), but never includes chat titles or message text.
+Chat Signals requests desktop notifications using Firefox/Chromium's `notifications` permission and plays short Web Audio cues on confirmed events, in foreground and background tabs. A notification preserves the **conversation's color and shape**, with a small contrasting severity emblem: checkmark for success, exclamation for warnings (including limit), and cross for errors. The tab favicon never receives this emblem. An invalid supplied icon falls back to the bundled icon. Notifications never include chat titles or message text.
 
 | Event | Category | Sound | Message |
 | --- | --- | --- | --- |
@@ -84,3 +84,7 @@ Develop directly on `main`. Do not bulk-inject into existing tabs or refresh the
 - Chime gain increased by about 7 dB, maintaining the same short motifs and per-event deduplication. Actual audibility still depends on the browser's audio policy and the system audio output.
 - Clicking a Chat Signals desktop notification now selects the **existing source tab** and asks Firefox to focus its **existing window**, without opening another tab or navigating to a private URL. On Hyprland, the `config-store` `machine/eosbox` focus rule additionally needs to match the `firefox-developer-edition` class. Window managers may apply their own focus policies.
 - No change to the conversation color allocator, favicon rendering or data collection permissions.
+
+### v0.3.4 — Notification severity visibility
+
+The OS notification API exposes basic notifications, not native success/warning/error urgency levels. To make the existing event categories distinguishable, the extension now overlays a small, high-contrast **check / exclamation / cross** on the *notification-only* 32px conversation-color icon. Limit reached remains a **warning**, following the existing event classification. No changes to tab favicon/color allocation, notification deduplication, sounds, event-state transitions, or required permissions. A focused browser test asserts that every event receives an emblem while the tab favicon stays unchanged.

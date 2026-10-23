@@ -114,7 +114,7 @@
       actionToken:present(action)?token(action):null,
       noticeKind:notice?.kind||null,noticeToken:notice?.id||null,hidden:document.hidden};
   }
-  function drawIcon(hex,kind){
+  function drawIcon(hex,kind,alertKind=null){
     const canvas=document.createElement('canvas');canvas.width=32;canvas.height=32;
     const ctx=canvas.getContext('2d');if(!ctx)return null;
     ctx.clearRect(0,0,32,32);ctx.fillStyle=hex;
@@ -122,6 +122,31 @@
       ctx.beginPath();ctx.arc(16,16,14,0,Math.PI*2);ctx.fill();
     }else{
       ctx.beginPath();ctx.roundRect(2,2,28,28,kind==='gpt'?10:5);ctx.fill();
+    }
+    if(alertKind){
+      // Notification-only severity emblem. The chat's allocated color and
+      // the tab favicon remain untouched, with identical silhouette.
+      const mark=alertKind==='completion'?'check':
+        alertKind==='failure'?'cross':
+        alertKind==='interruption'||alertKind==='limit'?'warning':null;
+      if(mark){
+        ctx.beginPath();
+        ctx.arc(24,24,7.5,0,Math.PI*2);
+        ctx.fillStyle='#ffffff';ctx.fill();
+        ctx.lineWidth=1.2;ctx.strokeStyle='#25303c';ctx.stroke();
+        ctx.lineWidth=2.2;ctx.lineCap='round';ctx.lineJoin='round';
+        ctx.strokeStyle='#25303c';ctx.fillStyle='#25303c';
+        if(mark==='check'){
+          ctx.beginPath();ctx.moveTo(20.5,24.2);
+          ctx.lineTo(23,26.5);ctx.lineTo(27.5,21.4);ctx.stroke();
+        }else if(mark==='cross'){
+          ctx.beginPath();ctx.moveTo(21.5,21.5);ctx.lineTo(26.5,26.5);
+          ctx.moveTo(26.5,21.5);ctx.lineTo(21.5,26.5);ctx.stroke();
+        }else{
+          ctx.beginPath();ctx.moveTo(24,20.5);ctx.lineTo(24,24.5);ctx.stroke();
+          ctx.beginPath();ctx.arc(24,27,1,0,Math.PI*2);ctx.fill();
+        }
+      }
     }
     return canvas.toDataURL('image/png');
   }
@@ -308,7 +333,7 @@
         chrome.runtime.sendMessage({type:'chat-signals-event',
           event:event.kind,key:color.hash(current.key),
           documentToken,epoch:next.epoch,
-          iconUrl:currentHex?drawIcon(currentHex,current.kind):null},answer=>{
+          iconUrl:currentHex?drawIcon(currentHex,current.kind,event.kind):null},answer=>{
           document.documentElement.dataset.chatSignalsNotification=
             answer?.created?'requested':'unavailable';
         });

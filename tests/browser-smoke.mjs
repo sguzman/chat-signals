@@ -289,6 +289,11 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
         for(const script of scripts)await diagnostic.addScriptTag({content:script});
         await diagnostic.evaluate(()=>{
           window.__sounds=[];
+          window.__eventNotifications=[];
+          window.chrome={runtime:{sendMessage:(payload,callback)=>{
+            if(payload.type==='chat-signals-event')window.__eventNotifications.push(payload);
+            callback?.({created:true});
+          }}};
           window.ChatSignalsChime={
             unlock:async()=> 'ready',
             play:async type=>{window.__sounds.push(type);return 'scheduled';}
@@ -312,6 +317,20 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
         await diagnostic.waitForFunction(()=>window.__sounds.length===1);
         assert.deepEqual(await diagnostic.evaluate(()=>window.__sounds),
           [expectedSound]);
+        const notification=await diagnostic.evaluate(()=>{
+          const item=window.__eventNotifications[0];
+          const favicon=document.querySelector('link[data-chat-signals-icon]')?.href;
+          return {event:item?.event,iconUrl:item?.iconUrl,
+            favicon,amount:window.__eventNotifications.length};
+        });
+        assert.equal(notification.amount,1,'only one notification event');
+        const expectedKind=kind==='interrupted'?'interruption':
+          kind==='failed'?'failure':kind;
+        assert.equal(notification.event,expectedKind);
+        assert.ok(notification.iconUrl?.startsWith('data:image/png;base64,'));
+        assert.ok(notification.favicon?.startsWith('data:image/png;base64,'));
+        assert.notEqual(notification.iconUrl,notification.favicon,
+          'severity emblem appears only on the notification icon');
         await diagnostic.evaluate(()=>{
           const alert=document.querySelector('[role="alert"]');
           const sibling=document.createElement('span');sibling.textContent='Unrelated';

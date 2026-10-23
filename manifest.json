@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Chat Signals",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Evidence-aware ChatGPT tab state and perceptual color identity.",
   "permissions": [
     "storage",
