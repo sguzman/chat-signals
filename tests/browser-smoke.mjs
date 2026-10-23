@@ -511,13 +511,15 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
       await banner.waitForFunction(()=>
         document.documentElement.dataset.chatSignalsState==='interrupted');
       assert.match(await banner.title(),/^🔌 /u);
-      assert.deepEqual(await banner.evaluate(()=>window.__sounds),['warning']);
+      assert.deepEqual(await banner.evaluate(()=>window.__sounds),[],
+        'a new interruption must not immediately sound a warning');
       await banner.evaluate(()=>
         document.querySelector('#plain-connection-banner').remove());
       await banner.waitForFunction(()=>
         document.documentElement.dataset.chatSignalsState==='verifying');
-      assert.equal(await banner.evaluate(()=>window.__sounds.length),1,
-        'recovery cannot play a second alert');
+      await banner.waitForTimeout(5300);
+      assert.deepEqual(await banner.evaluate(()=>window.__sounds),[],
+        'a recovered connection cannot deliver a delayed warning');
       await banner.evaluate(()=>{
         const el=document.createElement('div');el.id='plain-connection-banner';
         el.textContent='Connection interrupted. Waiting for the complete answer';
@@ -525,6 +527,22 @@ for(const [name,engine] of [['firefox',firefox],['chromium',chromium]]){
       });
       await banner.waitForFunction(()=>
         document.documentElement.dataset.chatSignalsState==='interrupted');
+      await banner.waitForFunction(()=>window.__sounds.length===1,
+        null,{timeout:12000});
+      assert.deepEqual(await banner.evaluate(()=>window.__sounds),['warning'],
+        'a persistent interruption must still warn');
+      await banner.evaluate(()=>
+        document.querySelector('#plain-connection-banner').remove());
+      await banner.waitForFunction(()=>
+        document.documentElement.dataset.chatSignalsState==='verifying');
+      await banner.evaluate(()=>{
+        const el=document.createElement('div');el.id='plain-connection-banner';
+        el.textContent='Connection interrupted. Waiting for the complete answer';
+        document.querySelector('main').append(el);
+      });
+      await banner.waitForFunction(()=>
+        document.documentElement.dataset.chatSignalsState==='interrupted');
+      await banner.waitForTimeout(5300);
       assert.deepEqual(await banner.evaluate(()=>window.__sounds),['warning'],
         'same-epoch repeat interruption must not chime again');
     }finally{await banner.close();}
