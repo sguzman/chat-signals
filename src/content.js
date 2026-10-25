@@ -3,6 +3,7 @@
   'use strict';
   if(globalThis.__chatSignalsOwner)return;
   const color=globalThis.ChatSignalsColor,state=globalThis.ChatSignalsState;
+  const queuePublisher=globalThis.ChatSignalsQueuePublisher;
   if(!color||!state)return;
   const owner={dispose};globalThis.__chatSignalsOwner=owner;
   const tracker=state.create();
@@ -19,7 +20,8 @@
   let tokenCount=0,current=null,currentHex=null,observer=null,observedMain=null,
     queued=false,job=0,fastQueued=false,disposed=false,stateReady=true,
     lastSavedState=-1,clickSettleJob=0,intentExpiryJob=0,lastIntentAt=-1000,routeNonce=0,iconLink=null,previousState=-1,lastProbe=0,
-    titleObserver=null,watchedTitle=null,titleWriteCount=0,titleWriteWindow=0;
+    titleObserver=null,watchedTitle=null,titleWriteCount=0,titleWriteWindow=0,
+    queueSequence=0,lastQueuePublished=-1,queueRestoredEpoch=null;
   // Oct 2026 ChatGPT composer variant renders Stop as an unlabeled button
   // carrying this square path (distinct from voice/Send). Require the exact
   // glyph within the composer; do not use any generic button/spinner match.
@@ -334,6 +336,20 @@
           ()=>void chrome.runtime.lastError);}catch{/* local state remains valid */}
       }
     }
+    // Only the current local tracker can publish versioned metadata. No
+    // transcript, draft, title, page-supplied phase or query string is sent.
+    if(current&&stateReady&&r.changed!==lastQueuePublished&&queuePublisher&&
+       color.identity(location.href)?.key===current.key){
+      const wire=queuePublisher.map(r,{route:location.pathname,documentToken,
+        sequence:queueSequence+1,restoredEpoch:queueRestoredEpoch});
+      if(wire){
+        queueSequence++;lastQueuePublished=r.changed;
+        try{chrome.runtime.sendMessage({type:queuePublisher.INTERNAL,
+          key:color.hash(current.key),documentToken,signal:wire},
+          ()=>void chrome.runtime.lastError);}
+        catch{/* absent Queue cannot break Chat Signals */}
+      }
+    }
     // ChatGPT may rewrite its own title without changing the response state.
     // Re-check the prefix independently of the evidence/state revision.
     maintainTitle();
@@ -354,7 +370,12 @@
       const live=sample();
       // Fresh on-page Stop or explicit error is stronger than a previous
       // session snapshot. It will be read by the immediate reconciliation.
-      if(saved&&!live.stop&&!live.noticeKind)tracker.restore(saved,live);
+      if(saved&&!live.stop&&!live.noticeKind){
+        tracker.restore(saved,live);
+        const hydrated=tracker.snapshot();
+        if(hydrated.reason.startsWith('restored-'))
+          queueRestoredEpoch=hydrated.epoch;
+      }
       if(!document.hidden)tracker.viewed();
       reconcile();
     }
@@ -550,7 +571,8 @@
       cancelInterruptionGrace();
       current=next;currentHex=null;
       eventAlerts?.reset(next?.key||null);
-      previousState=-1;lastSavedState=-1;
+      previousState=-1;lastSavedState=-1;lastQueuePublished=-1;
+      queueRestoredEpoch=null;
       stateReady=!next;
       tracker.reset(next?.key||null);
       if(!next){++routeNonce;paintIdentity();}
