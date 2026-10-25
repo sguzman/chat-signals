@@ -3,13 +3,21 @@ const assert=require('node:assert/strict');
 const vm=require('node:vm');
 const fs=require('node:fs');
 const color=require('../src/color.js');
+const publisher=require('../src/queue-publisher.js');
 
 function start(persistentStorage={}){
   let message,removed,clicked,session={},notifications=[],activations=[];
-  let tabWindows=new Map(),tabUrls=new Map();
+  let tabWindows=new Map(),tabUrls=new Map(),queueEnvelopes=[],queuePresent=true;
   const nonce='0123456789abcdef0123456789abcdef';
   const chrome={
     runtime:{lastError:null,getURL:p=>'moz-extension://synthetic/'+p,
+      sendMessage:(id,payload,callback)=>{
+        if(id!==publisher.QUEUE_ID){callback({ok:false});return;}
+        queueEnvelopes.push(payload);
+        chrome.runtime.lastError=queuePresent?null:{message:'Queue not installed'};
+        callback(queuePresent?{ok:true}:undefined);
+        chrome.runtime.lastError=null;
+      },
       onMessage:{addListener:fn=>{message=fn;}}},
     tabs:{
       onRemoved:{addListener:fn=>{removed=fn;}},
@@ -41,7 +49,7 @@ function start(persistentStorage={}){
     }
   };
   vm.runInNewContext(fs.readFileSync('src/background.js','utf8'),{
-    chrome,ChatSignalsColor:color
+    chrome,ChatSignalsColor:color,ChatSignalsQueuePublisher:publisher,URL
   });
   function send(id,request,origin='https://chatgpt.com/c/synthetic-chat'){
     return new Promise((resolve,reject)=>{
@@ -57,7 +65,10 @@ function start(persistentStorage={}){
     type:'chat-signals-complete',key,epoch,documentToken,iconUrl},origin);
   const event=(id,key,kind,epoch=1,documentToken=nonce,origin,iconUrl)=>send(id,{
     type:'chat-signals-event',event:kind,key,epoch,documentToken,iconUrl},origin);
-  return {register,saveState,complete,event,remove:id=>{
+  const queue=(id,key,signal,origin)=>send(id,{type:publisher.INTERNAL,key,
+    documentToken:signal.documentToken,signal},origin);
+  return {register,saveState,complete,event,queue,queueEnvelopes:()=>queueEnvelopes,
+    setQueuePresent:present=>{queuePresent=present;},remove:id=>{
       tabWindows.delete(id);tabUrls.delete(id);removed(id);
     },read:()=>session,readColors:()=>persistentStorage.chatSignalsColorLedgerV1,
     readStates:()=>persistentStorage.chatSignalsStateLedgerV1,
@@ -328,4 +339,41 @@ test('invalid persisted status fields do not restore executable or arbitrary dat
  for(const value of invalid)
    assert.equal((await w.saveState(95,key,value)).saved,false);
  assert.equal((await start(persistent).register(95,key)).restored,null);
+});
+
+test('versioned publisher forwards only registered, browser-attested phase metadata',async()=>{
+  const w=start(),id=601,key=color.hash('chat:synthetic-only');
+  const documentToken='a'.repeat(32);
+  w.setWindow(id,1);
+  w.setUrl(id,'https://chatgpt.com/c/synthetic-chat');
+  const signal=publisher.map({phase:'idle',epoch:0,confidence:'observed'},{
+    route:'/c/synthetic-chat',documentToken,sequence:1});
+  assert.equal((await w.queue(id,key,signal)).reason,'not-current');
+  await w.register(id,key,documentToken);
+  assert.deepEqual(await w.queue(id,key,signal),{forwarded:true});
+  assert.equal(w.queueEnvelopes().length,1);
+  const outbound=w.queueEnvelopes()[0];
+  assert.equal(outbound.type,publisher.TYPE);
+  assert.equal(outbound.tabId,id,'the tab ID comes from Firefox, not page data');
+  assert.deepEqual(JSON.parse(JSON.stringify(outbound.signal)),signal);
+  assert.ok(!JSON.stringify(outbound).includes('prompt text'));
+});
+test('provider rejects stale document, route spoofing and missing Queue harmlessly',async()=>{
+  const w=start(),id=602,key=color.hash('chat:synthetic-only');
+  w.setWindow(id,1);
+  const make=(route='/c/synthetic-chat',token='b'.repeat(32))=>
+    publisher.map({phase:'generating',epoch:1,confidence:'observed'},{
+      route,documentToken:token,sequence:4});
+  await w.register(id,key,'b'.repeat(32));
+  assert.equal((await w.queue(id,key,make('/c/other'))).reason,'route-mismatch');
+  assert.equal((await w.queue(id,key,make('/c/synthetic-chat','c'.repeat(32)))).reason,'not-current');
+  assert.equal((await w.queue(id,'ffffffffffffffff',make())).reason,'not-current');
+  w.setUrl(id,'https://chatgpt.com/c/new-route');
+  assert.equal((await w.queue(id,key,make())).reason,'route-mismatch');
+  w.setUrl(id,'https://chatgpt.com/c/synthetic-chat');
+  w.setQueuePresent(false);
+  assert.deepEqual(await w.queue(id,key,make()),{forwarded:false});
+  assert.equal((await w.saveState(id,key,{phase:'idle',epoch:0,read:'viewed'},
+    'b'.repeat(32))).saved,true,
+    'missing Queue cannot prevent independent Chat Signals updates');
 });
