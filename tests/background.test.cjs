@@ -6,7 +6,7 @@ const color=require('../src/color.js');
 const publisher=require('../src/queue-publisher.js');
 
 function start(persistentStorage={}){
-  let message,removed,clicked,session={},notifications=[],activations=[];
+  let message,externalMessage,removed,clicked,session={},notifications=[],activations=[],syncReceipts=[];
   let tabWindows=new Map(),tabUrls=new Map(),queueEnvelopes=[],queuePresent=true;
   const nonce='0123456789abcdef0123456789abcdef';
   const chrome={
@@ -18,9 +18,11 @@ function start(persistentStorage={}){
         callback(queuePresent?{ok:true}:undefined);
         chrome.runtime.lastError=null;
       },
-      onMessage:{addListener:fn=>{message=fn;}}},
+      onMessage:{addListener:fn=>{message=fn;}},
+      onMessageExternal:{addListener:fn=>{externalMessage=fn;}}},
     tabs:{
       onRemoved:{addListener:fn=>{removed=fn;}},
+      sendMessage:(id,message,callback)=>{syncReceipts.push({id,message});callback({queued:true});},
       get:(id,callback)=>callback(tabWindows.has(id)?
         {id,windowId:tabWindows.get(id),
           url:tabUrls.get(id)||'https://chatgpt.com/c/synthetic-chat'}:undefined),
@@ -65,9 +67,15 @@ function start(persistentStorage={}){
     type:'chat-signals-complete',key,epoch,documentToken,iconUrl},origin);
   const event=(id,key,kind,epoch=1,documentToken=nonce,origin,iconUrl)=>send(id,{
     type:'chat-signals-event',event:kind,key,epoch,documentToken,iconUrl},origin);
+  const queueSync=(id,route,from=publisher.QUEUE_ID)=>new Promise(resolve=>{
+    const result=externalMessage({type:'chat-queue-signal-sync/v1',tabId:id,route},
+      {id:from},resolve);
+    if(!result)resolve({rejected:true});
+  });
   const queue=(id,key,signal,origin)=>send(id,{type:publisher.INTERNAL,key,
     documentToken:signal.documentToken,signal},origin);
-  return {register,saveState,complete,event,queue,queueEnvelopes:()=>queueEnvelopes,
+  return {register,saveState,complete,event,queue,queueSync,
+    syncReceipts:()=>syncReceipts,queueEnvelopes:()=>queueEnvelopes,
     setQueuePresent:present=>{queuePresent=present;},remove:id=>{
       tabWindows.delete(id);tabUrls.delete(id);removed(id);
     },read:()=>session,readColors:()=>persistentStorage.chatSignalsColorLedgerV1,
@@ -376,4 +384,23 @@ test('provider rejects stale document, route spoofing and missing Queue harmless
   assert.equal((await w.saveState(id,key,{phase:'idle',epoch:0,read:'viewed'},
     'b'.repeat(32))).saved,true,
     'missing Queue cannot prevent independent Chat Signals updates');
+});
+
+test('one-shot Queue sync only targets attested live route from Queue principal',async()=>{
+  const w=start(),tab=715,key=color.hash('chat:synthetic-only');
+  w.setWindow(tab,1);
+  await w.register(tab,key);
+  assert.equal((await w.queueSync(tab,'/c/synthetic-chat','other-extension@invalid')).rejected,true);
+  assert.equal((await w.queueSync(tab,'/c/other')).queued,false);
+  assert.equal(w.syncReceipts().length,0);
+  assert.equal((await w.queueSync(tab,'/share/invalid')).rejected,true);
+  assert.equal((await w.queueSync(tab,'/c/synthetic-chat')).queued,true);
+  assert.equal(w.syncReceipts().length,1);
+  assert.equal(w.syncReceipts()[0].id,tab);
+  assert.deepEqual(JSON.parse(JSON.stringify(w.syncReceipts()[0].message)),{
+    type:'chat-signals-queue-sync/v1',route:'/c/synthetic-chat'
+  });
+  w.setUrl(tab,'https://chatgpt.com/c/new-chat');
+  assert.equal((await w.queueSync(tab,'/c/synthetic-chat')).queued,false);
+  assert.equal(w.syncReceipts().length,1);
 });
