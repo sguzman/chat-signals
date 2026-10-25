@@ -635,7 +635,7 @@
   // fresh source observation, not a replay of a historical terminal event.
   function onQueueSync(request,sender,reply){
     if(request?.type!=='chat-signals-queue-sync/v1')return false;
-    if(sender?.id!==chrome.runtime.id||!stateReady||disposed||!current||
+    if(sender?.id!==globalThis.chrome?.runtime?.id||!stateReady||disposed||!current||
        request.route!==location.pathname||
        color.identity(location.href)?.key!==current.key)return false;
     lastQueuePublished=-1; // the next reconcile republishes the current epoch
@@ -658,7 +658,7 @@
     if(job)clearTimeout(job);
     if(clickSettleJob)clearTimeout(clickSettleJob);
     if(intentExpiryJob)clearTimeout(intentExpiryJob);
-    chrome.runtime.onMessage?.removeListener?.(onQueueSync);
+    globalThis.chrome?.runtime?.onMessage?.removeListener?.(onQueueSync);
     document.removeEventListener('submit',onSubmit,true);
     document.removeEventListener('keydown',onKeydown,true);
     document.removeEventListener('click',onClick,true);
@@ -670,7 +670,7 @@
     if(globalThis.__chatSignalsOwner===owner)delete globalThis.__chatSignalsOwner;
   }
   watchFavicons();
-  chrome.runtime.onMessage?.addListener(onQueueSync);
+  globalThis.chrome?.runtime?.onMessage?.addListener?.(onQueueSync);
   document.addEventListener('submit',onSubmit,true);
   document.addEventListener('keydown',onKeydown,true);
   document.addEventListener('click',onClick,true);
