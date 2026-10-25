@@ -658,7 +658,7 @@
     if(job)clearTimeout(job);
     if(clickSettleJob)clearTimeout(clickSettleJob);
     if(intentExpiryJob)clearTimeout(intentExpiryJob);
-    chrome.runtime.onMessage?.removeListener(onQueueSync);
+    chrome.runtime.onMessage?.removeListener?.(onQueueSync);
     document.removeEventListener('submit',onSubmit,true);
     document.removeEventListener('keydown',onKeydown,true);
     document.removeEventListener('click',onClick,true);
