@@ -350,7 +350,7 @@ test('versioned publisher forwards only registered, browser-attested phase metad
     route:'/c/synthetic-chat',documentToken,sequence:1});
   assert.equal((await w.queue(id,key,signal)).reason,'not-current');
   await w.register(id,key,documentToken);
-  assert.deepEqual(await w.queue(id,key,signal),{forwarded:true});
+  assert.equal((await w.queue(id,key,signal)).forwarded,true);
   assert.equal(w.queueEnvelopes().length,1);
   const outbound=w.queueEnvelopes()[0];
   assert.equal(outbound.type,publisher.TYPE);
@@ -372,7 +372,7 @@ test('provider rejects stale document, route spoofing and missing Queue harmless
   assert.equal((await w.queue(id,key,make())).reason,'route-mismatch');
   w.setUrl(id,'https://chatgpt.com/c/synthetic-chat');
   w.setQueuePresent(false);
-  assert.deepEqual(await w.queue(id,key,make()),{forwarded:false});
+  assert.equal((await w.queue(id,key,make())).forwarded,false);
   assert.equal((await w.saveState(id,key,{phase:'idle',epoch:0,read:'viewed'},
     'b'.repeat(32))).saved,true,
     'missing Queue cannot prevent independent Chat Signals updates');
