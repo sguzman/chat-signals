@@ -193,6 +193,24 @@
       return {forwarded:false,reason:'route-mismatch'};
     return forwardQueue(tabId,parsed.signal);
   }
+  chrome.runtime.onMessageExternal?.addListener((request,sender,reply)=>{
+    if(sender?.id!==queuePublisher.QUEUE_ID||
+       request?.type!=='chat-queue-signal-sync/v1'||
+       !Number.isInteger(request.tabId)||request.tabId<0||
+       !queuePublisher.assigned(request.route))return false;
+    (async()=>{
+      if(await liveRoute(request.tabId)!==request.route)
+        return {queued:false,reason:'route-mismatch'};
+      return new Promise(resolve=>{
+        try{chrome.tabs.sendMessage(request.tabId,
+          {type:'chat-signals-queue-sync/v1',route:request.route},ack=>{
+            const unavailable=Boolean(chrome.runtime.lastError);
+            resolve({queued:!unavailable&&ack?.queued===true});
+          });}catch{resolve({queued:false});}
+      });
+    })().then(reply,()=>reply({queued:false}));
+    return true;
+  });
   chrome.runtime.onMessage.addListener((request,sender,reply)=>{
     const tabId=sender?.tab?.id;
     if(!Number.isInteger(tabId)||

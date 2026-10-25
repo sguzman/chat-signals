@@ -630,6 +630,19 @@
     if(clickSettleJob)clearTimeout(clickSettleJob);
     clickSettleJob=setTimeout(()=>{clickSettleJob=0;schedule();},350);
   }
+  // The Queue background may register after the first idle publication.
+  // A browser-attested, provider-background-only one-shot request causes a
+  // fresh source observation, not a replay of a historical terminal event.
+  function onQueueSync(request,sender,reply){
+    if(request?.type!=='chat-signals-queue-sync/v1')return false;
+    if(sender?.id!==chrome.runtime.id||!stateReady||disposed||!current||
+       request.route!==location.pathname||
+       color.identity(location.href)?.key!==current.key)return false;
+    lastQueuePublished=-1; // the next reconcile republishes the current epoch
+    schedule();
+    reply({queued:true});
+    return false;
+  }
   function onVisible(){if(!document.hidden){tracker.viewed();publish();}schedule();}
   function dispose(){
     disposed=true;
@@ -645,6 +658,7 @@
     if(job)clearTimeout(job);
     if(clickSettleJob)clearTimeout(clickSettleJob);
     if(intentExpiryJob)clearTimeout(intentExpiryJob);
+    chrome.runtime.onMessage?.removeListener(onQueueSync);
     document.removeEventListener('submit',onSubmit,true);
     document.removeEventListener('keydown',onKeydown,true);
     document.removeEventListener('click',onClick,true);
@@ -656,6 +670,7 @@
     if(globalThis.__chatSignalsOwner===owner)delete globalThis.__chatSignalsOwner;
   }
   watchFavicons();
+  chrome.runtime.onMessage?.addListener(onQueueSync);
   document.addEventListener('submit',onSubmit,true);
   document.addEventListener('keydown',onKeydown,true);
   document.addEventListener('click',onClick,true);
