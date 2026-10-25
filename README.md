@@ -10,6 +10,7 @@ A Firefox-first, cross-browser WebExtension for observing the **state of a ChatG
 - **Identity:** derive a stable, scope-aware conversation key; use color-distance selection in OKLab among allocated open chats. Use a filled square for a normal chat and a circle for project chats. Colors represent identity, **not** response state.
 - **Display:** a small state emoji prefix on the tab title. A narrowly bounded observer of the existing title element can restore an active emoji after ChatGPT overwrites the title; it never changes the observed response state.
 - **Event alerts:** confirmed completion, connection interruption, response/conversation failure, and conversation-length limit produce distinct short sounds and desktop notification categories. Routine states and 🔔 unread → ✅ viewed remain silent. Notifications never include chat text or titles. Browser audio may be blocked, especially in background tabs.
+- **Optional Chat Queue bridge (unreleased):** publishes only versioned phase, epoch, route and freshness metadata through Firefox-attested extension messaging. Missing Queue never disrupts Signals, and no transcript or draft text is shared. Source-to-consumer delivery has passed a disposable Firefox two-addon synthetic-site test; real authenticated ChatGPT behavior remains unverified.
 - **Later:** detailed state evidence and transitions, robust recovery, diagnostics export with strict privacy controls, and Viewsource-informed instrumentation.
 
 ## Documents
@@ -18,6 +19,7 @@ A Firefox-first, cross-browser WebExtension for observing the **state of a ChatG
 - [State and evidence model](docs/STATE-MODEL.md): observer boundaries, transition semantics, unresolved cases.
 - [Detailed observability roadmap](docs/OBSERVABILITY.md): additional chat-state dimensions, evidence discipline, and Viewsource-backed research targets.
 - [Architecture and QA](docs/ARCHITECTURE.md): strict separation of capture, inference, identity and presentation.
+- [Optional Queue publisher](docs/QUEUE-PUBLISHER.md): versioned metadata contract, browser-attested route, historical restore, startup resampling and acceptance limits.
 - [Development protocol](AGENTS.md): public-output protection, minimal regression fixes and browser safety.
 - [Reference sources](docs/SOURCES.md): original project history, provenance, Viewsource methodology, Mozilla WebExtension references.
 
