@@ -3,7 +3,10 @@
   'use strict';
   if(!root.ChatSignalsColor&&typeof importScripts==='function')
     importScripts('color.js');
+  if(!root.ChatSignalsQueuePublisher&&typeof importScripts==='function')
+    importScripts('queue-publisher.js');
   const colors=root.ChatSignalsColor;
+  const queuePublisher=root.ChatSignalsQueuePublisher;
   const KEY='chatSignalsSessionAllocationsV1';
   const COLOR_LEDGER_KEY='chatSignalsColorLedgerV1';
   const STATE_LEDGER_KEY='chatSignalsStateLedgerV1';
@@ -154,6 +157,42 @@
       });
     });
   }
+  // The browser-owned live tab URL, not a potentially stale SPA sender.url,
+  // is required for a forwarding decision. No broad tabs permission.
+  function liveRoute(tabId){
+    return new Promise(resolve=>{
+      try{chrome.tabs.get(tabId,tab=>{
+        if(chrome.runtime.lastError||!tab?.url){resolve(null);return;}
+        try{
+          const url=new URL(tab.url);
+          resolve(url.protocol==='https:'&&url.hostname==='chatgpt.com'?
+            url.pathname:null);
+        }catch{resolve(null);}
+      });}catch{resolve(null);}
+    });
+  }
+  function forwardQueue(tabId,signal){
+    // Queue may not be installed: forwarding failure is never a reason to
+    // disrupt this add-on's state, icons, notifications or color identity.
+    return new Promise(resolve=>{
+      try{chrome.runtime.sendMessage(queuePublisher.QUEUE_ID,
+        {type:queuePublisher.TYPE,tabId,signal},ack=>{
+          const unavailable=Boolean(chrome.runtime.lastError);
+          resolve({forwarded:!unavailable&&ack?.ok===true});
+        });}catch{resolve({forwarded:false});}
+    });
+  }
+  async function publishQueue(tabId,request){
+    const parsed=queuePublisher?.internal(request);
+    if(!parsed)return {forwarded:false,reason:'invalid-signal'};
+    const registered=(await get())[String(tabId)];
+    if(registered?.key!==parsed.key||
+       registered.documentToken!==parsed.signal.documentToken)
+      return {forwarded:false,reason:'not-current'};
+    if((await liveRoute(tabId))!==parsed.signal.route)
+      return {forwarded:false,reason:'route-mismatch'};
+    return forwardQueue(tabId,parsed.signal);
+  }
   chrome.runtime.onMessage.addListener((request,sender,reply)=>{
     const tabId=sender?.tab?.id;
     if(!Number.isInteger(tabId)||
@@ -168,6 +207,11 @@
     if(request.type==='chat-signals-state'){
       serialize(()=>saveState(tabId,request.key,request.documentToken,request.state))
         .then(reply,()=>reply({saved:false}));
+      return true;
+    }
+    if(request.type===queuePublisher?.INTERNAL){
+      serialize(()=>publishQueue(tabId,request))
+        .then(reply,()=>reply({forwarded:false,reason:'unavailable'}));
       return true;
     }
     const kind=request.type==='chat-signals-complete'?'completion':
