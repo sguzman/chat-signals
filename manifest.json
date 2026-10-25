@@ -10,6 +10,7 @@
   "background": {
     "scripts": [
       "src/color.js",
+      "src/queue-publisher.js",
       "src/background.js"
     ],
     "service_worker": "src/background.js"
@@ -24,6 +25,7 @@
         "src/state.js",
         "src/alerts.js",
         "src/chime.js",
+        "src/queue-publisher.js",
         "src/content.js"
       ],
       "run_at": "document_idle",
@@ -39,5 +41,8 @@
         ]
       }
     }
-  }
+  },
+  "host_permissions": [
+    "https://chatgpt.com/*"
+  ]
 }
